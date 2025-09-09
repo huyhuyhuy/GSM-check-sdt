@@ -4,7 +4,7 @@
 Thu âm tự động từ jack 3.5mm khi gọi điện thoại qua GSM
 - Luôn nghe audio từ jack 3.5mm
 - Đọc danh sách số từ list_viettel.txt
-- Gọi số qua GSM cổng COM132
+- Gọi số qua GSM cổng COM38
 - Thu âm 15 giây và lưu file
 """
 
@@ -13,13 +13,12 @@ import wave
 import serial
 import time
 import threading
-import queue
 from datetime import datetime
 import os
 import sys
 
 class AudioRecorder:
-    """Class để thu âm liên tục từ jack 3.5mm"""
+    """Class để thu âm từ jack 3.5mm khi cần thiết"""
     
     def __init__(self, sample_rate=44100, channels=2, chunk_size=1024):
         self.sample_rate = sample_rate
@@ -28,13 +27,10 @@ class AudioRecorder:
         self.format = pyaudio.paInt16
         
         self.pyaudio_instance = None
-        self.stream = None
-        self.audio_queue = queue.Queue()
-        self.is_recording = False
-        self.recording_thread = None
+        self.is_initialized = False
         
-    def start_continuous_recording(self):
-        """Bắt đầu thu âm liên tục"""
+    def initialize(self):
+        """Khởi tạo PyAudio"""
         try:
             self.pyaudio_instance = pyaudio.PyAudio()
             
@@ -43,100 +39,76 @@ class AudioRecorder:
                 print("❌ Không tìm thấy audio device!")
                 return False
             
-            print("🎤 Khởi tạo audio stream...")
-            self.stream = self.pyaudio_instance.open(
-                format=self.format,
-                channels=self.channels,
-                rate=self.sample_rate,
-                input=True,
-                frames_per_buffer=self.chunk_size,
-                stream_callback=self.audio_callback
-            )
-            
-            self.is_recording = True
-            self.recording_thread = threading.Thread(target=self._recording_worker, daemon=True)
-            self.recording_thread.start()
-            
-            print("✅ Đã bắt đầu thu âm liên tục từ jack 3.5mm")
+            print("🎤 Khởi tạo audio system...")
+            self.is_initialized = True
             return True
             
         except Exception as e:
             print(f"❌ Lỗi khởi tạo audio: {e}")
             return False
     
-    def audio_callback(self, in_data, frame_count, time_info, status):
-        """Callback cho audio stream"""
-        if self.is_recording:
-            self.audio_queue.put(in_data)
-        return (None, pyaudio.paContinue)
-    
-    def _recording_worker(self):
-        """Worker thread để xử lý audio data"""
-        while self.is_recording:
-            try:
-                # Lấy data từ queue và xử lý
-                if not self.audio_queue.empty():
-                    data = self.audio_queue.get_nowait()
-                    # Có thể xử lý real-time ở đây nếu cần
-                else:
-                    time.sleep(0.01)  # Tránh CPU cao
-            except queue.Empty:
-                time.sleep(0.01)
-            except Exception as e:
-                print(f"⚠️ Lỗi trong recording worker: {e}")
-    
-    def save_recording(self, filename, duration_seconds=15):
-        """Lưu đoạn thu âm với thời gian chỉ định"""
-        print(f"🎵 Bắt đầu lưu thu âm {duration_seconds}s...")
+    def record_audio(self, filename, duration_seconds=15):
+        """Thu âm trực tiếp với thời gian chỉ định"""
+        if not self.is_initialized:
+            print("❌ Audio chưa được khởi tạo!")
+            return False
         
-        frames = []
-        start_time = time.time()
+        print(f"🎵 Bắt đầu thu âm {duration_seconds}s...")
         
-        # Thu thập frames trong thời gian chỉ định
-        while time.time() - start_time < duration_seconds:
-            try:
-                if not self.audio_queue.empty():
-                    data = self.audio_queue.get_nowait()
-                    frames.append(data)
-                else:
-                    time.sleep(0.01)
-            except queue.Empty:
-                time.sleep(0.01)
-        
-        # Lưu file WAV
         try:
+            # Mở stream để thu âm
+            stream = self.pyaudio_instance.open(
+                format=self.format,
+                channels=self.channels,
+                rate=self.sample_rate,
+                input=True,
+                frames_per_buffer=self.chunk_size
+            )
+            
+            frames = []
+            total_chunks = int(self.sample_rate / self.chunk_size * duration_seconds)
+            
+            # Thu âm từng chunk
+            for i in range(total_chunks):
+                data = stream.read(self.chunk_size)
+                frames.append(data)
+                
+                # Hiển thị tiến trình
+                if i % (total_chunks // 10) == 0:
+                    progress = (i / total_chunks) * 100
+                    print(f"   📊 Tiến trình: {progress:.0f}%")
+            
+            # Đóng stream
+            stream.stop_stream()
+            stream.close()
+            
+            # Lưu file WAV
+            print(f"💾 Đang lưu file: {filename}")
             with wave.open(filename, 'wb') as wf:
                 wf.setnchannels(self.channels)
                 wf.setsampwidth(self.pyaudio_instance.get_sample_size(self.format))
                 wf.setframerate(self.sample_rate)
                 wf.writeframes(b''.join(frames))
             
-            print(f"✅ Đã lưu file: {filename}")
+            print(f"✅ Đã lưu file: {filename} ({duration_seconds}s)")
             return True
             
         except Exception as e:
-            print(f"❌ Lỗi lưu file {filename}: {e}")
+            print(f"❌ Lỗi thu âm: {e}")
             return False
     
-    def stop_recording(self):
-        """Dừng thu âm"""
-        self.is_recording = False
-        
-        if self.stream:
-            self.stream.stop_stream()
-            self.stream.close()
-            self.stream = None
-        
+    def cleanup(self):
+        """Dọn dẹp tài nguyên"""
         if self.pyaudio_instance:
             self.pyaudio_instance.terminate()
             self.pyaudio_instance = None
         
-        print("🛑 Đã dừng thu âm")
+        print("🛑 Đã dọn dẹp audio system")
 
 class GSMController:
-    """Class để điều khiển GSM qua cổng COM132"""
+    """Class để điều khiển GSM qua cổng COM38"""
     
-    def __init__(self, port="COM132", baudrate=115200):
+    def __init__(self, port="COM38", baudrate=115200):
         self.port = port
         self.baudrate = baudrate
         self.serial_connection = None
@@ -254,18 +226,18 @@ def main():
     # Khởi tạo audio recorder
     audio_recorder = AudioRecorder()
     
-    # Bắt đầu thu âm liên tục
-    if not audio_recorder.start_continuous_recording():
-        print("❌ Không thể khởi tạo audio recorder!")
+    # Khởi tạo audio system
+    if not audio_recorder.initialize():
+        print("❌ Không thể khởi tạo audio system!")
         return
     
     # Khởi tạo GSM controller
-    gsm = GSMController(port="COM132")
+    gsm = GSMController(port="COM38")
     
     # Kết nối GSM
     if not gsm.connect():
         print("❌ Không thể kết nối GSM!")
-        audio_recorder.stop_recording()
+        audio_recorder.cleanup()
         return
     
     # Đọc danh sách số điện thoại
@@ -273,7 +245,7 @@ def main():
     if not phone_numbers:
         print("❌ Không có số điện thoại nào để gọi!")
         gsm.disconnect()
-        audio_recorder.stop_recording()
+        audio_recorder.cleanup()
         return
     
     print(f"\n🚀 Bắt đầu gọi {len(phone_numbers)} số điện thoại...")
@@ -293,9 +265,8 @@ def main():
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"{phone_number}_{timestamp}.wav"
                 
-                # Thu âm 15 giây
-                print(f"🎵 Thu âm 15 giây...")
-                if audio_recorder.save_recording(filename, duration_seconds=15):
+                # Thu âm 15 giây trực tiếp
+                if audio_recorder.record_audio(filename, duration_seconds=15):
                     print(f"✅ Đã lưu: {filename}")
                 else:
                     print(f"❌ Lỗi lưu file: {filename}")
@@ -320,7 +291,7 @@ def main():
     # Kết thúc
     print("\n🏁 Hoàn thành tất cả cuộc gọi!")
     gsm.disconnect()
-    audio_recorder.stop_recording()
+    audio_recorder.cleanup()
     print("👋 Tạm biệt!")
 
 if __name__ == "__main__":
