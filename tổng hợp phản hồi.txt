@@ -1,0 +1,147 @@
+
+tiến hành test:
+Lắp sim vina vào GSM và gọi tới các số của 4 nhà mạng (các số cần check): viettel, vina, mobifone, Vietnamobile
+và xem phản hồi với các tình huống:
+1: số cần check hoạt động bình thường, có đổ chuông nhưng không bắt máy
+2: số cần check hoạt động bình thường, có đổ chuông và nghe máy
+3: số cần check hoạt động bình thường, có đổ chuông và từ chối cuộc gọi
+4: số cần check chặn số vina của tôi
+5: số cần check ở trạng thái thuê bao
+
+Kết quả
+- với số cần check thuộc nhà mạng viettel:
+    1: số cần check hoạt động bình thường, có đổ chuông nhưng không bắt máy
+    +CLCC: 1,0,2,0,0,"0393025568",129,""
+    # sau 40 giây
+    +CLCC: 1,0,6,0,0,"0393025568",129,""
+    NO CARRIER
+
+    2: số cần check hoạt động bình thường, có đổ chuông và nghe máy
+    +CLCC: 1,0,2,0,0,"0393025568",129,""
+    #trong 40 giây mà phía bên số cần check nghe máy
+    +CLCC: 1,0,0,0,0,"0393025568",129,""
+    +COLP: "0393025568",129,"",0
+
+    3: số cần check hoạt động bình thường, có đổ chuông và từ chối cuộc gọi
+    +CLCC: 1,0,2,0,0,"0393025568",129,""
+    #trong 40 giây mà phía bên số cần check từ chối cuộc gọi
+    +CLCC: 1,0,6,0,0,"0393025568",129,""
+    BUSY
+
+    4: số cần check chặn số vina của tôi
+    +CLCC: 1,0,2,0,0,"0867279344",129,""
+    # 15 giây sau
+    +CLCC: 1,0,0,0,0,"0867279344",129,"" #đây là để lại lời nhắn sau tiếng bip
+    +COLP: "0867279344",129,"",0
+
+    5: số cần check ở trạng thái thuê bao
+    +CLCC: 1,0,2,0,0,"0348942793",129,""
+    # 30 giây sau
+    +CLCC: 1,0,6,0,0,"0348942793",129,""
+    NO CARRIER
+
+- với số cần check thuộc nhà mạng vina:
+    1: số cần check hoạt động bình thường, có đổ chuông nhưng không bắt máy
+    +CLCC: 1,0,2,0,0,"0835776061",129,""
+    +CLCC: 1,0,3,0,0,"0835776061",129,""
+    # sau 40 giây
+    +CLCC: 1,0,6,0,0,"0835776061",129,""
+    NO ANSWER
+
+    2: số cần check hoạt động bình thường, có đổ chuông và nghe máy
+    +CLCC: 1,0,2,0,0,"0835776061",129,""
+    +CLCC: 1,0,3,0,0,"0835776061",129,""
+    #trong 40 giây mà phía bên số cần check nghe máy
+    +CLCC: 1,0,0,0,0,"0835776061",129,""
+    +COLP: "0835776061",129,"",0
+
+    3: số cần check hoạt động bình thường, có đổ chuông và từ chối cuộc gọi
+    +CLCC: 1,0,2,0,0,"0835776061",129,""
+    +CLCC: 1,0,3,0,0,"0835776061",129,""
+    #trong 40 giây mà phía bên số cần check từ chối cuộc gọi
+    +CLCC: 1,0,6,0,0,"0835776061",129,""
+    BUSY
+
+    4: số cần check chặn số vina của tôi
+    +CLCC: 1,0,2,0,0,"0835776061",129,""
+    +CLCC: 1,0,3,0,0,"0835776061",129,""
+    # 15 giây sau
+    +CLCC: 1,0,6,0,0,"0835776061",129,""
+    BUSY
+
+    5: số cần check ở trạng thái thuê bao
+    +CLCC: 1,0,2,0,0,"0825464913",129,""
+    # sau 30 giây
+    +CLCC: 1,0,6,0,0,"0825464913",129,""
+    NO CARRIER
+
+- với số cần check thuộc nhà mạng mobifone:
+    1: số cần check hoạt động bình thường, có đổ chuông nhưng không bắt máy
+    +CLCC: 1,0,2,0,0,"0767623714",129,""
+    +CLCC: 1,0,3,0,0,"0767623714",129,""
+    # sau 40 giây
+    +CLCC: 1,0,6,0,0,"0767623714",129,""
+    NO ANSWER
+
+    2: số cần check hoạt động bình thường, có đổ chuông và nghe máy
+    +CLCC: 1,0,2,0,0,"0767623714",129,""
+    +CLCC: 1,0,3,0,0,"0767623714",129,""
+    #trong 40 giây mà phía bên số cần check nghe máy
+    +CLCC: 1,0,0,0,0,"0767623714",129,""
+    +COLP: "0767623714",129,"",0
+
+    3: số cần check hoạt động bình thường, có đổ chuông và từ chối cuộc gọi
+    +CLCC: 1,0,2,0,0,"0767623714",129,""
+    +CLCC: 1,0,3,0,0,"0767623714",129,""
+    #trong 40 giây mà phía bên số cần check từ chối cuộc gọi
+    +CLCC: 1,0,6,0,0,"0767623714",129,""
+    BUSY
+
+    4: số cần check chặn số vina của tôi
+    +CLCC: 1,0,2,0,0,"0773870929",129,""
+    +CLCC: 1,0,3,0,0,"0773870929",129,""
+    # sau 40 giây
+    +CLCC: 1,0,0,0,0,"0773870929",129,"" #đây là để lại lời nhắn sau tiếng bip
+    +COLP: "0773870929",129,"",0 
+
+    5: số cần check ở trạng thái thuê bao
+    +CLCC: 1,0,2,0,0,"0706265147",129,""
+    # sau 30 giây
+    +CLCC: 1,0,6,0,0,"0706265147",129,""
+    NO CARRIER
+
+
+- với số cần check thuộc nhà mạng Vietnamobile:
+    1: số cần check hoạt động bình thường, có đổ chuông nhưng không bắt máy
+    +CLCC: 1,0,2,0,0,"0528478441",129,""
+    +CLCC: 1,0,3,0,0,"0528478441",129,""
+    # sau 40 giây
+    +CLCC: 1,0,6,0,0,"0528478441",129,""
+    NO CARRIER
+
+    2: số cần check hoạt động bình thường, có đổ chuông và nghe máy
+    +CLCC: 1,0,2,0,0,"0528478441",129,""
+    +CLCC: 1,0,3,0,0,"0528478441",129,""
+    #trong 40 giây mà phía bên số cần check nghe máy
+    +CLCC: 1,0,0,0,0,"0528478441",129,""
+    +COLP: "0528478441",129,"",0
+
+    3: số cần check hoạt động bình thường, có đổ chuông và từ chối cuộc gọi
+    +CLCC: 1,0,2,0,0,"0528478441",129,""
+    +CLCC: 1,0,3,0,0,"0528478441",129,""
+    #trong 40 giây mà phía bên số cần check từ chối cuộc gọi
+    +CLCC: 1,0,6,0,0,"0528478441",129,""
+    NO CARRIER
+
+    4: số cần check chặn số vina của tôi
+    +CLCC: 1,0,2,0,0,"0528478441",129,""
+    +CLCC: 1,0,3,0,0,"0528478441",129,""
+    # sau 15 giây
+    +CLCC: 1,0,6,0,0,"0528478441",129,""
+    NO CARRIER
+
+    5: số cần check ở trạng thái thuê bao
+    +CLCC: 1,0,2,0,0,"0528478441",129,""
+    # sau 30 giây
+    +CLCC: 1,0,6,0,0,"0528478441",129,""
+    NO CARRIER

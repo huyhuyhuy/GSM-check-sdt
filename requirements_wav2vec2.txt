@@ -1,0 +1,20 @@
+# Dependencies cho Wav2Vec2 Vietnamese Speech-to-Text
+# Cài đặt: pip install -r requirements_wav2vec2.txt
+
+# Core ML libraries
+torch>=1.12.0
+torchaudio>=0.12.0
+transformers>=4.20.0
+
+# Audio processing
+librosa>=0.9.0
+soundfile>=0.10.0
+numpy>=1.21.0
+scipy>=1.7.0
+
+# Performance optimization
+accelerate>=0.12.0
+
+# Additional utilities
+pathlib2>=2.3.0
+typing-extensions>=4.0.0
