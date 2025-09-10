@@ -1,0 +1,2 @@
+python audio_classification/my_training.py
+python audio_classification/my_testing.py
