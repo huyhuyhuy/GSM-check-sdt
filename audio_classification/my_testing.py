@@ -36,12 +36,17 @@ classifier = tf.keras.models.load_model(MODEL_PATH)
 # Audio utils
 # =========================
 def load_wav(filename: str):
-    """Load wav -> mono 16kHz waveform"""
+    # audio, sr = librosa.load(
+    #     filename,
+    #     # mono=True,
+    #     # sr=16000,
+    # )
     audio, sr = sf.read(filename)
     if audio.ndim > 1:  # stereo -> mono
-        audio = np.mean(audio, axis=1)
+        # audio = np.sum(audio, axis=1)
+        audio = audio[:, 0] + audio[:, 1] + audio[:, 1]
 
-    # resample về 16kHz
+    # resample về 16kHz, nhưng giữ nguyên tốc độ/nội dung
     if sr != 16000:
         audio = resample_poly(audio, 16000, sr)
     return audio.astype(np.float32)
