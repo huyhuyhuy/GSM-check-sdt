@@ -15,7 +15,7 @@ MODEL_PATH = BASE_PATH / "audio_classification.keras"
 
 labels = [
     "alive",
-    "alive1",  # waiting sound
+    "alive1",  # waiting sounds
     "alive2",  # leave message
     "can_not_connect",
     "incorrect",
