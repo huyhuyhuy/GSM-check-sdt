@@ -10,11 +10,13 @@ import sounddevice as sd
 
 BASE_PATH = Path(__file__).parent
 DATASET_PATH = BASE_PATH / "dataset/vietel"
-VALIDATE_PATH = BASE_PATH / "dataset/vietel/validate"
+VALIDATE_PATH = BASE_PATH / "dataset/validate"
 MODEL_PATH = BASE_PATH / "audio_classification.keras"
 
 labels = [
     "alive",
+    "alive1",  # waiting sounds
+    "alive2",  # leave message
     "can_not_connect",
     "incorrect",
     "unknown",
@@ -404,7 +406,7 @@ def build_dataset(base_path, labels):
 
         # Time mask 0.5s again
 
-    # Time mask 0.25s 4 times
+    # Time mask 0.2s 4 times
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.wav"))
@@ -416,7 +418,7 @@ def build_dataset(base_path, labels):
             removed = time_mask(
                 audio,
                 sr=16000,
-                mask_duration=0.25,
+                mask_duration=0.2,
             )
             training_count += 1
             all_embeddings.append(audio_to_embedding(removed))
