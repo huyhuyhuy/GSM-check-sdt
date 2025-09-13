@@ -11,13 +11,18 @@ from pathlib import Path
 # =========================
 BASE_PATH = Path(__file__).parent
 TEST_PATH = BASE_PATH / "dataset/testing"
+# TEST_PATH = BASE_PATH / "dataset/validate/unknown"
+# TEST_PATH = BASE_PATH / "dataset/vietel/has_no_money"
+
 MODEL_PATH = BASE_PATH / "audio_classification.keras"
 
 labels = [
     "alive",
     "alive1",  # waiting sounds
     "alive2",  # leave message
+    "be_blocked",
     "can_not_connect",
+    "has_no_money",
     "incorrect",
     "unknown",
 ]
