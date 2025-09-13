@@ -17,7 +17,9 @@ labels = [
     "alive",
     "alive1",  # waiting sounds
     "alive2",  # leave message
+    "be_blocked",
     "can_not_connect",
+    "has_no_money",
     "incorrect",
     "unknown",
 ]
@@ -34,17 +36,12 @@ yamnet_model = hub.load(yamnet_model_handle)
 # Audio utils + augmentation
 # =========================
 def load_wav(filename: str):
-    # audio, sr = librosa.load(
-    #     filename,
-    #     # mono=True,
-    #     # sr=16000,
-    # )
     audio, sr = sf.read(filename)
     if audio.ndim > 1:  # stereo -> mono
         # audio = np.sum(audio, axis=1)
         audio = audio[:, 0] + audio[:, 1] + audio[:, 1]
 
-    # resample về 16kHz, nhưng giữ nguyên tốc độ/nội dung
+    # resample
     if sr != 16000:
         audio = resample_poly(audio, 16000, sr)
     return audio.astype(np.float32)
@@ -200,7 +197,7 @@ def build_dataset(base_path, labels):
             all_embeddings.append(audio_to_embedding(noise))
             all_labels.append(idx)
 
-    # Remove first 3s
+    # Remove first 3s and stretch rate=1.3
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.wav"))
@@ -265,7 +262,7 @@ def build_dataset(base_path, labels):
             all_embeddings.append(audio_to_embedding(removed))
             all_labels.append(idx)
 
-    # Remove first 4s and stretch rate=1.2,
+    # Remove first 4s and stretch rate=0.9,
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.wav"))
@@ -424,7 +421,7 @@ def build_dataset(base_path, labels):
             all_embeddings.append(audio_to_embedding(removed))
             all_labels.append(idx)
             removed = time_mask(
-                audio,
+                removed,
                 sr=16000,
                 mask_duration=0.25,
             )
@@ -432,9 +429,62 @@ def build_dataset(base_path, labels):
             all_embeddings.append(audio_to_embedding(removed))
             all_labels.append(idx)
             removed = time_mask(
-                audio,
+                removed,
                 sr=16000,
                 mask_duration=0.25,
+            )
+            # listen(removed)
+            # input()
+            training_count += 1
+            all_embeddings.append(audio_to_embedding(removed))
+            all_labels.append(idx)
+
+        # Time mask 0.5s
+
+    # Time mask 0.5s 4 times and remove 2s
+    for idx, label in enumerate(labels):
+        folder = base_path / label
+        files = list(folder.glob("*.wav"))
+        if not files:
+            print(f"[WARN] No files found in {folder}")
+            continue
+        for f in files:
+            audio = load_wav(str(f))
+            removed = removeFirst(
+                audio,
+                seconds=2,
+            )
+            removed = time_mask(
+                removed,
+                sr=16000,
+                mask_duration=0.5,
+            )
+            # listen(removed)
+            # input()
+            training_count += 1
+            all_embeddings.append(audio_to_embedding(removed))
+            all_labels.append(idx)
+
+        # Time mask 0.5s 4 times and remove 2s
+
+    # Time mask 0.5s and add reverb 2
+    for idx, label in enumerate(labels):
+        folder = base_path / label
+        files = list(folder.glob("*.wav"))
+        if not files:
+            print(f"[WARN] No files found in {folder}")
+            continue
+        for f in files:
+            audio = load_wav(str(f))
+            removed = add_reverb(
+                audio,
+                sr=16000,
+                decay=2,
+            )
+            removed = time_mask(
+                removed,
+                sr=16000,
+                mask_duration=0.5,
             )
             # listen(removed)
             # input()
@@ -558,6 +608,8 @@ classifier = tf.keras.Sequential(
     [
         tf.keras.layers.Input(shape=(1024,)),
         tf.keras.layers.Dense(512, activation="relu"),
+        tf.keras.layers.Dense(128, activation="relu"),
+        tf.keras.layers.Dense(64, activation="relu"),
         tf.keras.layers.Dropout(0.3),
         tf.keras.layers.Dense(num_classes, activation="softmax"),
     ]
@@ -572,7 +624,11 @@ classifier.compile(
 # =========================
 # Train
 # =========================
-history = classifier.fit(train_ds, validation_data=val_ds, epochs=30)
+history = classifier.fit(
+    train_ds,
+    validation_data=val_ds,
+    epochs=30,
+)
 
 # =========================
 # Save model
