@@ -1,5 +1,16 @@
 python audio_classification/my_training.py
 python audio_classification/my_testing.py
+python audio_classification/my_training_fine_turning.py
+python audio_classification/my_testing_fine_turning.py
+
+
+python audio_classification/counting_data.py
+
+
+
+GPU env
+```bash
+powershell -NoExit -Command "& { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; & 'C:\Users\ADMIN\anaconda3\Scripts\conda.exe' shell.powershell hook | Out-String | Invoke-Expression; conda activate myenv }"
 
 HDSD:
 - chạy file my_training.py để tạo ra model(khi chưa có model, hoặc muốn có  model mới với data mới)
