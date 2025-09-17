@@ -10,8 +10,9 @@ from pathlib import Path
 # =========================
 BASE_PATH = Path(__file__).parent
 TEST_PATH = BASE_PATH / "dataset/testing"
-TEST_PATH = BASE_PATH / "dataset/validate/can_not_connect"
-# TEST_PATH = BASE_PATH / "dataset/vietel/be_blocked"
+# TEST_PATH = BASE_PATH / "dataset/prepare_dataset"
+# TEST_PATH = BASE_PATH / "dataset/validate/incorrect"
+TEST_PATH = BASE_PATH / "dataset/vietel/be_blocked"
 
 MODEL_PATH = BASE_PATH / "audio_classification.keras"
 # MODEL_PATH = BASE_PATH / "audio_classification_wav2vec2.keras"
@@ -37,7 +38,7 @@ yamnet_model_handle = "https://tfhub.dev/google/yamnet/1"
 yamnet_model = hub.load(yamnet_model_handle)
 
 print("🔹 Loading trained classifier...")
-classifier = tf.keras.models.load_model(MODEL_PATH)
+classifier = tf.keras.models.load_model(MODEL_PATH, compile=False)
 
 
 # =========================
