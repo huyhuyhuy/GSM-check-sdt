@@ -8,15 +8,17 @@ import scipy.signal
 from pathlib import Path
 import sounddevice as sd
 
+
 BASE_PATH = Path(__file__).parent
 DATASET_PATH = BASE_PATH / "dataset/vietel"
 VALIDATE_PATH = BASE_PATH / "dataset/validate"
 MODEL_PATH = BASE_PATH / "audio_classification.keras"
 
 labels = [
-    "alive",
+    "alive",  # ringback tone
     "alive1",  # waiting sounds
     "alive2",  # leave message
+    # "alive3",  # leave message - busy
     "be_blocked",
     "can_not_connect",
     "has_no_money",
@@ -86,13 +88,22 @@ def removeFirst(
     seconds,
     sr=16000,
 ):
-    if isinstance(audio, np.ndarray):
-        start_sample = int(seconds * sr)
-        if start_sample >= len(audio):
-            return np.array([], dtype=audio.dtype)  # all removed
-        return audio[start_sample:]
-    else:
+    if not isinstance(audio, np.ndarray):
         raise TypeError("audio must be a numpy array")
+
+    start_sample = int(seconds * sr)
+    total_len = len(audio)
+
+    if start_sample >= total_len:
+        return np.zeros_like(audio)
+
+    # Lấy phần còn lại
+    trimmed = audio[start_sample:]
+
+    # Bổ sung silence (0.0) cho đủ độ dài ban đầu
+    padding = np.zeros(total_len - len(trimmed), dtype=audio.dtype)
+
+    return np.concatenate([trimmed, padding])
 
 
 def audio_to_embedding(audio):
@@ -117,6 +128,29 @@ def add_reverb(audio, sr, decay=0.3):
     reverb = scipy.signal.fftconvolve(audio, impulse)[: len(audio)]
     reverb = reverb / np.max(np.abs(reverb))
     return reverb.astype(np.float32)
+
+
+def add_random_volume(
+    audio,
+    sr=16000,
+    chunk_duration=1.0,
+    prob=0.3,
+    min_gain=0.5,
+    max_gain=1.5,
+):
+    audio = audio.copy()
+    chunk_size = int(sr * chunk_duration)
+    n_chunks = int(np.ceil(len(audio) / chunk_size))
+
+    for i in range(n_chunks):
+        start = i * chunk_size
+        end = min((i + 1) * chunk_size, len(audio))
+
+        if np.random.rand() < prob:
+            gain = np.random.uniform(min_gain, max_gain)
+            audio[start:end] *= gain
+
+    return audio.astype(np.float32)
 
 
 def listen(audio):
@@ -159,21 +193,10 @@ def build_dataset(base_path, labels):
             all_embeddings.append(audio_to_embedding(audio))
             all_labels.append(idx)
 
-            # clone 2: shift
-            shift_noise = shift_audio(
-                audio,
-            )
-            training_count += 1
-            all_embeddings.append(audio_to_embedding(shift_noise))
-            # listen(shift_noise)
-            # input()
-            all_labels.append(idx)
-
-            # clone 3: stretch
             # max rate 1.5
             stretch = stretch_audio(
                 audio,
-                rate=1.5,
+                rate=1.2,
             )
             training_count += 1
             all_embeddings.append(audio_to_embedding(stretch))
@@ -193,6 +216,21 @@ def build_dataset(base_path, labels):
                 audio,
                 noise_factor=0.05,
             )
+            training_count += 1
+            all_embeddings.append(audio_to_embedding(noise))
+            all_labels.append(idx)
+
+    # add random volume
+    for idx, label in enumerate(labels):
+        folder = base_path / label
+        files = list(folder.glob("*.wav"))
+        if not files:
+            continue
+        for f in files:
+            audio = load_wav(str(f))
+            noise = add_random_volume(audio)
+            # listen(noise)
+            # input()
             training_count += 1
             all_embeddings.append(audio_to_embedding(noise))
             all_labels.append(idx)
@@ -441,7 +479,7 @@ def build_dataset(base_path, labels):
 
         # Time mask 0.5s
 
-    # Time mask 0.5s 4 times and remove 2s
+    # Time mask 0.2s 4 times and remove 2s
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.wav"))
@@ -457,7 +495,7 @@ def build_dataset(base_path, labels):
             removed = time_mask(
                 removed,
                 sr=16000,
-                mask_duration=0.5,
+                mask_duration=0.2,
             )
             # listen(removed)
             # input()
@@ -467,7 +505,7 @@ def build_dataset(base_path, labels):
 
         # Time mask 0.5s 4 times and remove 2s
 
-    # Time mask 0.5s and add reverb 2
+    # Time mask 0.2s and add reverb 2
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.wav"))
@@ -484,12 +522,31 @@ def build_dataset(base_path, labels):
             removed = time_mask(
                 removed,
                 sr=16000,
-                mask_duration=0.5,
+                mask_duration=0.2,
             )
             # listen(removed)
             # input()
             training_count += 1
             all_embeddings.append(audio_to_embedding(removed))
+            all_labels.append(idx)
+
+    # add random volume and pink noise 0.03
+    for idx, label in enumerate(labels):
+        folder = base_path / label
+        files = list(folder.glob("*.wav"))
+        if not files:
+            continue
+        for f in files:
+            audio = load_wav(str(f))
+            noise = add_random_volume(audio)
+            noise = add_pink_noise(
+                noise,
+                amount=0.3,
+            )
+            # listen(noise)
+            # input()
+            training_count += 1
+            all_embeddings.append(audio_to_embedding(noise))
             all_labels.append(idx)
 
     X = tf.stack(all_embeddings)
@@ -624,10 +681,14 @@ classifier.compile(
 # =========================
 # Train
 # =========================
+# canhdt training_count: 2220
+# canhdt valiadtion_count: 310
 history = classifier.fit(
     train_ds,
     validation_data=val_ds,
     epochs=30,
+    # steps_per_epoch=70,
+    # validation_steps=8,
 )
 
 # =========================
