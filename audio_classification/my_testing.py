@@ -4,6 +4,7 @@ import numpy as np
 import soundfile as sf
 from scipy.signal import resample_poly
 from pathlib import Path
+import sounddevice as sd
 
 # =========================
 # Config
@@ -11,8 +12,8 @@ from pathlib import Path
 BASE_PATH = Path(__file__).parent
 TEST_PATH = BASE_PATH / "dataset/testing"
 # TEST_PATH = BASE_PATH / "dataset/prepare_dataset"
-TEST_PATH = BASE_PATH / "dataset/validate/be_blocked_and_incorrect"
-# TEST_PATH = BASE_PATH / "dataset/vietel/unknown"
+# TEST_PATH = BASE_PATH / "dataset/validate/can_not_connect"
+TEST_PATH = BASE_PATH / "dataset/vietel/alive2"
 
 MODEL_PATH = BASE_PATH / "audio_classification.keras"
 # MODEL_PATH = BASE_PATH / "audio_classification_wav2vec2.keras"
@@ -53,8 +54,11 @@ def load_wav(filename: str):
     # )
     audio, sr = sf.read(filename)
     if audio.ndim > 1:  # stereo -> mono
-        # audio = np.sum(audio, axis=1)
-        audio = audio[:, 0] + audio[:, 1] + audio[:, 1]
+        # audio = np.mean(audio, axis=1)
+        audio = audio[:, 0]
+        # audio = audio[:, 0] + audio[:, 1]
+        # audio = audio[:, 1]
+        # audio = audio[:, 0]
 
     # resample về 16kHz, nhưng giữ nguyên tốc độ/nội dung
     if sr != 16000:
@@ -69,6 +73,19 @@ def audio_to_embedding(audio):
     return emb
 
 
+def listen(audio):
+    """Play audio in normal Python (terminal)"""
+    if isinstance(audio, tf.Tensor):
+        audio = audio.numpy()
+    print("▶️ playing audio...")
+    sd.play(
+        audio,
+        16000,
+    )
+    sd.wait()  # block cho tới khi play xong
+    print("✅ done")
+
+
 # =========================
 # Run inference on testing folder
 # =========================
@@ -80,6 +97,8 @@ if not files:
 else:
     for f in files:
         audio = load_wav(str(f))
+        # listen(audio)
+        # input()
         emb = audio_to_embedding(audio)
         emb = tf.expand_dims(emb, 0)  # batch size 1
 
