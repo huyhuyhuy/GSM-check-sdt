@@ -19,10 +19,11 @@ labels = [
     "alive1",  # waiting sounds
     "alive2",  # leave message
     # "alive3",  # leave message - busy
-    "be_blocked",
+    # "be_blocked",
+    "be_blocked_and_incorrect",
     "can_not_connect",
     "has_no_money",
-    "incorrect",
+    # "incorrect",
     "unknown",
 ]
 num_classes = len(labels)
@@ -40,8 +41,7 @@ yamnet_model = hub.load(yamnet_model_handle)
 def load_wav(filename: str):
     audio, sr = sf.read(filename)
     if audio.ndim > 1:  # stereo -> mono
-        # audio = np.sum(audio, axis=1)
-        audio = audio[:, 0] + audio[:, 1] + audio[:, 1]
+        audio = audio[:, 0]
 
     # resample
     if sr != 16000:
@@ -54,9 +54,9 @@ def add_white_noise(audio, noise_factor=0.005):
     return (audio + noise_factor * noise).astype(np.float32)
 
 
-def shift_audio(audio, shift_max=2000):
-    shift = np.random.randint(-shift_max, shift_max)
-    return np.roll(audio, shift).astype(np.float32)
+# def shift_audio(audio, shift_max=2000):
+#     shift = np.random.randint(-shift_max, shift_max)
+#     return np.roll(audio, shift).astype(np.float32)
 
 
 def stretch_audio(audio, rate=1.1):
@@ -193,7 +193,7 @@ def build_dataset(base_path, labels):
             all_embeddings.append(audio_to_embedding(audio))
             all_labels.append(idx)
 
-            # max rate 1.5
+            # max rate 1.2
             stretch = stretch_audio(
                 audio,
                 rate=1.2,
@@ -283,7 +283,7 @@ def build_dataset(base_path, labels):
             all_embeddings.append(audio_to_embedding(removed))
             all_labels.append(idx)
 
-    # Remove first 7s
+    # Remove first 1s and stretch rate=0.9,
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.wav"))
@@ -294,24 +294,7 @@ def build_dataset(base_path, labels):
             audio = load_wav(str(f))
             removed = removeFirst(
                 audio,
-                seconds=7,
-            )
-            training_count += 1
-            all_embeddings.append(audio_to_embedding(removed))
-            all_labels.append(idx)
-
-    # Remove first 4s and stretch rate=0.9,
-    for idx, label in enumerate(labels):
-        folder = base_path / label
-        files = list(folder.glob("*.wav"))
-        if not files:
-            print(f"[WARN] No files found in {folder}")
-            continue
-        for f in files:
-            audio = load_wav(str(f))
-            removed = removeFirst(
-                audio,
-                seconds=7,
+                seconds=1,
             )
             removed = stretch_audio(
                 removed,
@@ -477,8 +460,6 @@ def build_dataset(base_path, labels):
             all_embeddings.append(audio_to_embedding(removed))
             all_labels.append(idx)
 
-        # Time mask 0.5s
-
     # Time mask 0.2s 4 times and remove 2s
     for idx, label in enumerate(labels):
         folder = base_path / label
@@ -580,42 +561,34 @@ def build_validation_dataset(
             all_embeddings.append(audio_to_embedding(audio))
             all_labels.append(idx)
 
-            # clone 2: shift
-            shift_noise = shift_audio(
-                audio,
-            )
-            valiadtion_count += 1
-            all_embeddings.append(audio_to_embedding(shift_noise))
-            all_labels.append(idx)
-
             # clone 3: stretch
-            # max rate 1.5
+            # max rate 1.3
             stretch = stretch_audio(
                 audio,
-                rate=1.5,
+                rate=1.3,
             )
             valiadtion_count += 1
             all_embeddings.append(audio_to_embedding(stretch))
             all_labels.append(idx)
 
-    # add white noise
-    for idx, label in enumerate(labels):
-        folder = base_path / label
-        files = list(folder.glob("*.wav"))
-        if not files:
-            print(f"[WARN] No files found in {folder}")
-            continue
-        for f in files:
-            audio = load_wav(str(f))
-            noise = add_white_noise(
-                audio,
-                noise_factor=0.1,
-            )
-            valiadtion_count += 1
-            all_embeddings.append(audio_to_embedding(noise))
-            all_labels.append(idx)
+    # # add white noise
+    # for idx, label in enumerate(labels):
+    #     folder = base_path / label
+    #     files = list(folder.glob("*.wav"))
+    #     if not files:
+    #         print(f"[WARN] No files found in {folder}")
+    #         continue
+    #     for f in files:
+    #         audio = load_wav(str(f))
+    #         noise = add_white_noise(
+    #             audio,
+    #             noise_factor=0.1,
+    #         )
+    #         valiadtion_count += 1
+    #         all_embeddings.append(audio_to_embedding(noise))
+    #         all_labels.append(idx)
 
-    # Remove first 5s
+    # Remove first 3s add random volume
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.wav"))
@@ -626,8 +599,47 @@ def build_validation_dataset(
             audio = load_wav(str(f))
             removed = removeFirst(
                 audio,
-                seconds=5,
+                seconds=3,
             )
+            all_embeddings.append(audio_to_embedding(removed))
+            all_labels.append(idx)
+            removed = add_random_volume(removed)
+            valiadtion_count += 1
+            all_embeddings.append(audio_to_embedding(removed))
+            all_labels.append(idx)
+
+    # Time mask 0.3s 4 times
+    for idx, label in enumerate(labels):
+        folder = base_path / label
+        files = list(folder.glob("*.wav"))
+        if not files:
+            print(f"[WARN] No files found in {folder}")
+            continue
+        for f in files:
+            audio = load_wav(str(f))
+            removed = time_mask(
+                audio,
+                sr=16000,
+                mask_duration=0.3,
+            )
+            # valiadtion_count += 1
+            # all_embeddings.append(audio_to_embedding(removed))
+            # all_labels.append(idx)
+            removed = time_mask(
+                removed,
+                sr=16000,
+                mask_duration=0.3,
+            )
+            valiadtion_count += 1
+            all_embeddings.append(audio_to_embedding(removed))
+            all_labels.append(idx)
+            removed = time_mask(
+                removed,
+                sr=16000,
+                mask_duration=0.3,
+            )
+            # listen(removed)
+            # input()
             valiadtion_count += 1
             all_embeddings.append(audio_to_embedding(removed))
             all_labels.append(idx)
@@ -661,10 +673,13 @@ print(f"canhdt validation count: {valiadtion_count}")
 # =========================
 # Build classifier
 # =========================
+
 classifier = tf.keras.Sequential(
     [
         tf.keras.layers.Input(shape=(1024,)),
+        tf.keras.layers.Dense(1024, activation="relu"),
         tf.keras.layers.Dense(512, activation="relu"),
+        tf.keras.layers.Dense(256, activation="relu"),
         tf.keras.layers.Dense(128, activation="relu"),
         tf.keras.layers.Dense(64, activation="relu"),
         tf.keras.layers.Dropout(0.3),
