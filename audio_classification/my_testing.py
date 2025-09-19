@@ -11,8 +11,8 @@ from pathlib import Path
 BASE_PATH = Path(__file__).parent
 TEST_PATH = BASE_PATH / "dataset/testing"
 # TEST_PATH = BASE_PATH / "dataset/prepare_dataset"
-# TEST_PATH = BASE_PATH / "dataset/validate/incorrect"
-TEST_PATH = BASE_PATH / "dataset/vietel/be_blocked"
+# TEST_PATH = BASE_PATH / "dataset/validate/alive1"
+# TEST_PATH = BASE_PATH / "dataset/vietel/alive1"
 
 MODEL_PATH = BASE_PATH / "audio_classification.keras"
 # MODEL_PATH = BASE_PATH / "audio_classification_wav2vec2.keras"

@@ -661,17 +661,34 @@ print(f"canhdt validation count: {valiadtion_count}")
 # =========================
 # Build classifier
 # =========================
+# loss: 0.7426 - accuracy: 0.7181 - val_loss: 0.8628 - val_accuracy: 0.6855
+# classifier = tf.keras.Sequential(
+#     [
+#         tf.keras.layers.Input(shape=(1024,)),
+#         tf.keras.layers.Dense(512, activation="relu"),
+#         tf.keras.layers.Dense(128, activation="relu"),
+#         tf.keras.layers.Dense(64, activation="relu"),
+#         tf.keras.layers.Dropout(0.1),
+#         tf.keras.layers.Dense(num_classes, activation="softmax"),
+#     ]
+# )
+
+# bestest
+# loss: 0.7236 - accuracy: 0.7216 - val_loss: 0.8389 - val_accuracy: 0.6952
 classifier = tf.keras.Sequential(
     [
         tf.keras.layers.Input(shape=(1024,)),
+        tf.keras.layers.Dense(1024, activation="relu"),
         tf.keras.layers.Dense(512, activation="relu"),
+        tf.keras.layers.Dense(256, activation="relu"),
         tf.keras.layers.Dense(128, activation="relu"),
         tf.keras.layers.Dense(64, activation="relu"),
         tf.keras.layers.Dropout(0.3),
         tf.keras.layers.Dense(num_classes, activation="softmax"),
     ]
 )
-
+# original: (1e-4): loss: 0.7232 - accuracy: 0.7256 - val_loss: 0.8030 - val_accuracy: 0.6887
+# (5e-5) and bestest: 0.7236 - accuracy: 0.7216 - val_loss: 0.8389 - val_accuracy: 0.6952
 classifier.compile(
     optimizer=tf.keras.optimizers.Adam(1e-4),
     loss="sparse_categorical_crossentropy",
