@@ -19,10 +19,11 @@ labels = [
     "alive1",  # waiting sounds
     "alive2",  # leave message
     # "alive3",  # leave message - busy
-    "be_blocked",
+    # "be_blocked",
+    "be_blocked_and_incorrect",
     "can_not_connect",
     "has_no_money",
-    "incorrect",
+    # "incorrect",
     "unknown",
 ]
 num_classes = len(labels)
