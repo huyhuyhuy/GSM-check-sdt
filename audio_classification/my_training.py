@@ -673,25 +673,31 @@ print(f"canhdt validation count: {valiadtion_count}")
 # =========================
 # Build classifier
 # =========================
+reload = True
 
-classifier = tf.keras.Sequential(
-    [
-        tf.keras.layers.Input(shape=(1024,)),
-        tf.keras.layers.Dense(1024, activation="relu"),
-        tf.keras.layers.Dense(512, activation="relu"),
-        tf.keras.layers.Dense(256, activation="relu"),
-        tf.keras.layers.Dense(128, activation="relu"),
-        tf.keras.layers.Dense(64, activation="relu"),
-        tf.keras.layers.Dropout(0.3),
-        tf.keras.layers.Dense(num_classes, activation="softmax"),
-    ]
-)
+if reload and MODEL_PATH.exists():
+    print(f"🔹 Loading model from {MODEL_PATH}")
+    classifier = tf.keras.models.load_model(MODEL_PATH)
+else:
+    print("🔹 Building new model...")
+    classifier = tf.keras.Sequential(
+        [
+            tf.keras.layers.Input(shape=(1024,)),
+            tf.keras.layers.Dense(1024, activation="relu"),
+            tf.keras.layers.Dense(512, activation="relu"),
+            tf.keras.layers.Dense(256, activation="relu"),
+            tf.keras.layers.Dense(128, activation="relu"),
+            tf.keras.layers.Dense(64, activation="relu"),
+            tf.keras.layers.Dropout(0.3),
+            tf.keras.layers.Dense(num_classes, activation="softmax"),
+        ]
+    )
 
-classifier.compile(
-    optimizer=tf.keras.optimizers.Adam(1e-4),
-    loss="sparse_categorical_crossentropy",
-    metrics=["accuracy"],
-)
+    classifier.compile(
+        optimizer=tf.keras.optimizers.Adam(1e-4),
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"],
+    )
 
 # =========================
 # Train

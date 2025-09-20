@@ -10,10 +10,12 @@ import sounddevice as sd
 # Config
 # =========================
 BASE_PATH = Path(__file__).parent
-TEST_PATH = BASE_PATH / "dataset/testing"
+# TEST_PATH = BASE_PATH / "dataset/testing"
 # TEST_PATH = BASE_PATH / "dataset/prepare_dataset"
-# TEST_PATH = BASE_PATH / "dataset/validate/can_not_connect"
-TEST_PATH = BASE_PATH / "dataset/vietel/alive2"
+TEST_PATH = BASE_PATH / "dataset/validate/unknown"
+TEST_PATH = BASE_PATH / "dataset/vietel/unknown"
+
+FORCE_LABEL = 4
 
 MODEL_PATH = BASE_PATH / "audio_classification.keras"
 # MODEL_PATH = BASE_PATH / "audio_classification_wav2vec2.keras"
@@ -108,4 +110,10 @@ else:
         confidence = float(preds[0][pred_idx])
 
         print(f"🎧 File: {f.name}")
-        print(f"   → Predicted: {pred_label} ({confidence:.2%})\n")
+        if FORCE_LABEL != None and FORCE_LABEL != pred_idx:
+            print(f"❌   → Predicted: {pred_label} ({confidence:.2%})\n")
+        elif confidence < 0.95:
+            # warning icon
+            print(f"⚠️   → Predicted: {pred_label} ({confidence:.2%})\n")
+        else:
+            print(f"   → Predicted: {pred_label} ({confidence:.2%})\n")
