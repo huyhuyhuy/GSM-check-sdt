@@ -10,11 +10,8 @@ from datetime import datetime
 # ---------- CONFIG ----------
 SERIAL_PORT = "COM37"      # Test trên com 37
 BAUDRATE = 921600
-PHONE = "0379543103"     
-# Tạo tên file unique với timestamp để tránh ghi đè
-TIMESTAMP = datetime.now().strftime("%Y%m%d_%H%M%S")
+PHONE_LIST_FILE = "list_viettel.txt"  # File chứa danh sách số điện thoại
 REMOTE_FILENAME = "record.amr"  # Tên file đơn giản
-LOCAL_FILENAME = f"{PHONE}_{TIMESTAMP}.amr"   # Tên file local đầy đủ
 FORMAT = 13               # format từ AT+QAUDRD=? (giá trị 13 theo phản hồi của bạn)
 CHUNK = 65536  # 64KB chunk - cân bằng tốc độ và ổn định
 # ---------------------------
@@ -60,17 +57,23 @@ def read_exact(ser, length, timeout=5):
 def expect_ok(resp):
     return "\r\nOK\r\n" in resp
 
-#  cấu hình lại baudrate của EC20
-def set_ec20_baudrate(com_port):
-    ser = serial.Serial(com_port, 115200, timeout=1)
-    cmds = ["AT+IPR=921600\r\n", "AT&W\r\n", "AT+CFUN=1,1\r\n"]
-    for cmd in cmds:
-        ser.write(cmd.encode())
-        time.sleep(0.5)
-        print(ser.read(128).decode(errors="ignore"))
-    ser.close()
-    print(f"Đã set {com_port} sang 921600, hãy mở lại COM với baudrate 921600.")
-
+def read_phone_list(filename):
+    """Đọc danh sách số điện thoại từ file"""
+    phones = []
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            for line in f:
+                phone = line.strip()
+                if phone and phone.isdigit():  # Chỉ lấy các dòng có số điện thoại hợp lệ
+                    phones.append(phone)
+        print(f"Đã đọc {len(phones)} số điện thoại từ {filename}")
+        return phones
+    except FileNotFoundError:
+        print(f"❌ Không tìm thấy file {filename}")
+        return []
+    except Exception as e:
+        print(f"❌ Lỗi khi đọc file {filename}: {e}")
+        return []
 
 def check_call_status(ser):
     """Kiểm tra trạng thái cuộc gọi"""
@@ -217,26 +220,20 @@ def download_file_via_qfread(ser, remote_name, local_path):
 
 # Removed AMR to WAV conversion functions - not needed for streamlined workflow
 
-def main():
-    try:
-        ser = open_serial(SERIAL_PORT, BAUDRATE)
-    except Exception as e:
-        print("Không thể mở cổng serial:", e)
-        sys.exit(1)
-
-    print("=== GSM RECORDING TOOL ===")
-    print(f"Gọi tới: {PHONE}")
-    print(f"File sẽ lưu: {LOCAL_FILENAME}")
-    # cấu hình lại baudrate của EC20
-    # set_ec20_baudrate(SERIAL_PORT)
+def process_single_call(ser, phone):
+    """Xử lý một cuộc gọi đơn lẻ"""
+    call_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    local_filename = f"{phone}_{call_timestamp}.amr"
+    
+    print(f"\n=== Gọi tới: {phone} ===")
+    print(f"File sẽ lưu: {local_filename}")
 
     # Gọi điện và đợi 1 giây
     print("Đang gọi...")
-    call_resp = send_at(ser, f"ATD{PHONE};", timeout=5)
+    call_resp = send_at(ser, f"ATD{phone};", timeout=5)
     if "ERROR" in call_resp:
         print("❌ Lỗi khi gọi điện")
-        ser.close()
-        return
+        return False
     
     print("✅ Đã gọi, đợi cuộc gọi được thiết lập...")
     time.sleep(1.5)  # Giảm từ 2s xuống 1.5s
@@ -256,9 +253,10 @@ def main():
     print(f"Response ghi âm: {record_resp}")
     
     if "ERROR" in record_resp or "CME ERROR" in record_resp:
-        print("❌ Không thể bắt đầu ghi âm. Kết thúc.")
-        ser.close()
-        return
+        print("❌ Không thể bắt đầu ghi âm. Chuyển sang số tiếp theo.")
+        # Ngắt cuộc gọi trước khi chuyển sang số tiếp theo
+        send_at(ser, "ATH", timeout=2)
+        return False
     
     # Ghi âm 15 giây (không hiển thị progress để tăng tốc)
     print("Đang ghi âm 15 giây...")
@@ -280,16 +278,69 @@ def main():
     
     # Tải file
     print("💾 Đang tải file...")
-    local_path = os.path.join(os.path.dirname(__file__), LOCAL_FILENAME)
+    local_path = os.path.join(os.path.dirname(__file__), local_filename)
     ok = download_file_via_qfread(ser, REMOTE_FILENAME, local_path)
     
     if ok:
-        print(f"✅ Hoàn tất: {LOCAL_FILENAME}")
+        print(f"✅ Hoàn tất: {local_filename}")
+        return True
     else:
         print("❌ Không tải được file")
+        return False
+
+def main():
+    # Đọc danh sách số điện thoại
+    phone_list = read_phone_list(PHONE_LIST_FILE)
+    if not phone_list:
+        print("❌ Không có số điện thoại nào để gọi")
+        sys.exit(1)
+    
+    try:
+        ser = open_serial(SERIAL_PORT, BAUDRATE)
+    except Exception as e:
+        print("Không thể mở cổng serial:", e)
+        sys.exit(1)
+
+    print("=== GSM RECORDING TOOL ===")
+    print(f"Sẽ gọi {len(phone_list)} số điện thoại:")
+    for i, phone in enumerate(phone_list, 1):
+        print(f"  {i}. {phone}")
+    
+    successful_calls = 0
+    failed_calls = 0
+    
+    # Lặp qua từng số điện thoại
+    for i, phone in enumerate(phone_list, 1):
+        print(f"\n{'='*50}")
+        print(f"Cuộc gọi {i}/{len(phone_list)}")
+        
+        try:
+            success = process_single_call(ser, phone)
+            if success:
+                successful_calls += 1
+            else:
+                failed_calls += 1
+        except Exception as e:
+            print(f"❌ Lỗi không mong muốn khi gọi {phone}: {e}")
+            failed_calls += 1
+            # Đảm bảo ngắt cuộc gọi nếu có lỗi
+            try:
+                send_at(ser, "ATH", timeout=2)
+            except:
+                pass
+        
+        # Nghỉ giữa các cuộc gọi (trừ cuộc gọi cuối)
+        if i < len(phone_list):
+            print("⏳ Nghỉ 2 giây trước cuộc gọi tiếp theo...")
+            time.sleep(2)
 
     ser.close()
-    print("🏁 Kết thúc!")
+    
+    print(f"\n{'='*50}")
+    print("🏁 KẾT QUÁ TỔNG HỢP:")
+    print(f"✅ Thành công: {successful_calls}/{len(phone_list)} cuộc gọi")
+    print(f"❌ Thất bại: {failed_calls}/{len(phone_list)} cuộc gọi")
+    print("🏁 Hoàn tất!")
 
 if __name__ == "__main__":
     main()
