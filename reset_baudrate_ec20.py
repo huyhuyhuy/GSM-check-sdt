@@ -13,4 +13,4 @@ def set_ec20_baudrate(com_port):
     print(f"Đã set {com_port} sang 921600, hãy mở lại COM với baudrate 921600.")
 
 if __name__ == "__main__":
-    set_ec20_baudrate("COM38")
+    set_ec20_baudrate("COM37")
