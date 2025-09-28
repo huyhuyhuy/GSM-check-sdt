@@ -4,7 +4,16 @@ python audio_classification/my_training_fine_turning.py
 python audio_classification/my_testing_fine_turning.py
 
 python audio_classification/add_prefix_for_file_name.py
+<<<<<<< HEAD
 python audio_classification/get_phone_number.py
+=======
+<<<<<<< HEAD
+python audio_classification/speech_to_text_vosk.py
+python audio_classification/speech_to_text_whisper_api.py
+python audio_classification/speech_to_text_whisper_local.py
+=======
+>>>>>>> 8d1d605e8cc7409e6ef7f44bb06a774acac278a1
+>>>>>>> d9e924921a0b75358b8b2a133d6f989881f4b1ae
 
 
 python audio_classification/counting_data.py
