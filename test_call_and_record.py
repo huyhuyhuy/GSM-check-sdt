@@ -10,11 +10,41 @@ from datetime import datetime
 # ---------- CONFIG ----------
 SERIAL_PORT = "COM37"      # Test trên com 37
 BAUDRATE = 921600
-PHONE_LIST_FILE = "list_viettel.txt"  # File chứa danh sách số điện thoại
+PHONE_LIST_FILE = "list_4g.txt"  # File chứa danh sách số điện thoại
 REMOTE_FILENAME = "record.amr"  # Tên file đơn giản
 FORMAT = 13               # format từ AT+QAUDRD=? (giá trị 13 theo phản hồi của bạn)
 CHUNK = 65536  # 64KB chunk - cân bằng tốc độ và ổn định
 # ---------------------------
+
+def reset_baudrate_to_921600(port):
+    """Reset baudrate của EC20 từ 115200 sang 921600"""
+    print("🔄 Đang reset baudrate từ 115200 sang 921600...")
+    try:
+        ser = serial.Serial(port, 115200, timeout=1)
+        cmds = ["AT+IPR=921600\r\n", "AT&W\r\n"]
+        for cmd in cmds:
+            ser.write(cmd.encode())
+            time.sleep(1)
+            response = ser.read(128).decode(errors="ignore")
+            print(f"Response: {response.strip()}")
+        ser.close()
+        print("✅ Đã reset baudrate thành công")
+        return True
+    except Exception as e:
+        print(f"❌ Lỗi khi reset baudrate: {e}")
+        return False
+
+def reset_module(ser):
+    """Reset module EC20"""
+    print("🔄 Đang reset module...")
+    try:
+        resp = send_at(ser, "AT+CFUN=1,1", timeout=5)
+        print(f"Reset response: {resp}")
+        return True
+    except Exception as e:
+        print(f"❌ Lỗi khi reset module: {e}")
+        return False
+
 
 def open_serial(port, baud):
     s = serial.Serial(port, baud, timeout=5)  # Tăng timeout cho baudrate cao
@@ -295,6 +325,16 @@ def main():
         print("❌ Không có số điện thoại nào để gọi")
         sys.exit(1)
     
+    # Reset baudrate khi bắt đầu chương trình
+    print("🚀 Bắt đầu chương trình...")
+    if not reset_baudrate_to_921600(SERIAL_PORT):
+        print("❌ Không thể reset baudrate, thoát chương trình")
+        sys.exit(1)
+    
+    # Nghỉ 5 giây sau khi reset baudrate
+    print("⏳ Nghỉ 5 giây để module ổn định...")
+    time.sleep(5)
+    
     try:
         ser = open_serial(SERIAL_PORT, BAUDRATE)
     except Exception as e:
@@ -329,18 +369,47 @@ def main():
             except:
                 pass
         
+        # Reset module sau mỗi 100 cuộc gọi
+        if i % 100 == 0 and i < len(phone_list):
+            print(f"\n🔄 Đã hoàn thành {i} cuộc gọi, đang reset module...")
+            try:
+                # Gọi reset_module(ser) - module sẽ reset và nhảy về baudrate 115200
+                reset_module(ser)
+                ser.close()  # Đóng kết nối hiện tại
+                
+                # Nghỉ 50 giây sau reset
+                print("⏳ Nghỉ 50 giây...")
+                time.sleep(50)
+                
+                # Kết nối lại và set baudrate về 921600
+                print("🔄 Đang kết nối lại và set baudrate về 921600...")
+                if reset_baudrate_to_921600(SERIAL_PORT):
+                    # Nghỉ 5 giây
+                    print("⏳ Nghỉ 5 giây để module ổn định...")
+                    time.sleep(5)
+                    ser = open_serial(SERIAL_PORT, BAUDRATE)  # Kết nối lại với baudrate cao
+                    print("✅ Đã reset module và kết nối lại thành công")
+                else:
+                    print("❌ Không thể set baudrate, thoát chương trình")
+                    sys.exit(1)
+            except Exception as e:
+                print(f"❌ Lỗi khi reset module: {e}")
+                sys.exit(1)
+        
         # Nghỉ giữa các cuộc gọi (trừ cuộc gọi cuối)
         if i < len(phone_list):
             print("⏳ Nghỉ 2 giây trước cuộc gọi tiếp theo...")
             time.sleep(2)
 
-    ser.close()
-    
     print(f"\n{'='*50}")
     print("🏁 KẾT QUÁ TỔNG HỢP:")
     print(f"✅ Thành công: {successful_calls}/{len(phone_list)} cuộc gọi")
     print(f"❌ Thất bại: {failed_calls}/{len(phone_list)} cuộc gọi")
     print("🏁 Hoàn tất!")
+    
+    # reset module lần cuối TRƯỚC KHI đóng kết nối
+    reset_module(ser)
+    ser.close()
 
 if __name__ == "__main__":
     main()

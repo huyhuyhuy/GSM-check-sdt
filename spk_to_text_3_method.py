@@ -23,7 +23,6 @@ INPUT_FILE = "input.amr"   # file .amr hoặc .amr đầu vào
 TEMP_WAV = "temp.wav"      # file wav tạm sau khi convert
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-
 # -------------------- UTILS --------------------
 def convert_to_wav(in_file, out_file):
     """Convert input audio (.amr/.amr) sang wav 16kHz mono"""
