@@ -4,7 +4,6 @@ import numpy as np
 import librosa
 import soundfile as sf
 from scipy.signal import resample_poly
-import scipy.signal
 from pathlib import Path
 import sounddevice as sd
 from pydub import AudioSegment
@@ -69,11 +68,6 @@ def add_white_noise(audio, noise_factor=0.005):
     return (audio + noise_factor * noise).astype(np.float32)
 
 
-# def shift_audio(audio, shift_max=2000):
-#     shift = np.random.randint(-shift_max, shift_max)
-#     return np.roll(audio, shift).astype(np.float32)
-
-
 def stretch_audio(audio, rate=1.1):
     """Time-stretch waveform using librosa (via STFT)."""
     # STFT
@@ -98,51 +92,12 @@ def add_pink_noise(audio, amount=0.005):
     return augmented.astype(np.float32)
 
 
-# def removeFirst(
-#     audio,
-#     seconds,
-#     sr=16000,
-# ):
-#     if not isinstance(audio, np.ndarray):
-#         raise TypeError("audio must be a numpy array")
-
-#     start_sample = int(seconds * sr)
-#     total_len = len(audio)
-
-#     if start_sample >= total_len:
-#         return np.zeros_like(audio)
-
-#     # Lấy phần còn lại
-#     trimmed = audio[start_sample:]
-
-#     # Bổ sung silence (0.0) cho đủ độ dài ban đầu
-#     padding = np.zeros(total_len - len(trimmed), dtype=audio.dtype)
-
-#     return np.concatenate([trimmed, padding])
-
-
-def audio_to_embedding(audio):
-    scores, embeddings, spectrogram = yamnet_model(audio)
-    emb = tf.reduce_mean(embeddings, axis=0)
-    return emb
-
-
 def time_mask(audio, sr, mask_duration=0.2):
     augmented = audio.copy()
     mask_len = int(mask_duration * sr)
     start = np.random.randint(0, len(audio) - mask_len)
     augmented[start : start + mask_len] = 0
     return augmented.astype(np.float32)
-
-
-# def add_reverb(audio, sr, decay=0.3):
-#     ir_len = int(sr * 0.03)  # 30ms
-#     impulse = np.zeros(ir_len)
-#     impulse[0] = 1.0
-#     impulse += decay * np.random.randn(ir_len)
-#     reverb = scipy.signal.fftconvolve(audio, impulse)[: len(audio)]
-#     reverb = reverb / np.max(np.abs(reverb))
-#     return reverb.astype(np.float32)
 
 
 def add_random_volume(
@@ -181,11 +136,15 @@ def listen(audio):
     print("✅ done")
 
 
+def audio_to_embedding(audio):
+    scores, embeddings, spectrogram = yamnet_model(audio)
+    emb = tf.reduce_mean(embeddings, axis=0)
+    return emb
+
+
 # =========================
 # Build dataset (clone + noise)
 # =========================
-
-
 training_count = 0
 
 
@@ -208,18 +167,7 @@ def build_dataset(base_path, labels):
             all_embeddings.append(audio_to_embedding(audio))
             all_labels.append(idx)
 
-            # max rate 1.2
-            stretch = stretch_audio(
-                audio,
-                rate=1.2,
-            )
-            training_count += 1
-            all_embeddings.append(audio_to_embedding(stretch))
-            # listen(stretch)
-            # input()
-            all_labels.append(idx)
-
-    # add white noise only
+    # add white noise only noise_factor=0.01
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.amr"))
@@ -229,7 +177,7 @@ def build_dataset(base_path, labels):
             audio = load_wav(str(f))
             noise = add_white_noise(
                 audio,
-                noise_factor=0.05,
+                noise_factor=0.01,
             )
             training_count += 1
             all_embeddings.append(audio_to_embedding(noise))
@@ -250,7 +198,7 @@ def build_dataset(base_path, labels):
             all_embeddings.append(audio_to_embedding(noise))
             all_labels.append(idx)
 
-    # Remove first 3s and stretch rate=1.3
+    # stretch rate=1.2
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.amr"))
@@ -259,25 +207,15 @@ def build_dataset(base_path, labels):
             continue
         for f in files:
             audio = load_wav(str(f))
-            # removed = removeFirst(
-            #     audio,
-            #     seconds=3,
-            # )
-            # training_count += 1
-            # all_embeddings.append(audio_to_embedding(removed))
-            # all_labels.append(idx)
-
             stretch = stretch_audio(
                 audio,
-                rate=1.3,
+                rate=1.2,
             )
             training_count += 1
             all_embeddings.append(audio_to_embedding(stretch))
-            # listen(stretch)
-            # input()
             all_labels.append(idx)
 
-    # Remove first 1s and add white noise noise_factor=0.02
+    # add white noise noise_factor=0.02
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.amr"))
@@ -286,10 +224,6 @@ def build_dataset(base_path, labels):
             continue
         for f in files:
             audio = load_wav(str(f))
-            # removed = removeFirst(
-            #     audio,
-            #     seconds=1,
-            # )
             removed = add_white_noise(
                 audio,
                 noise_factor=0.02,
@@ -298,28 +232,7 @@ def build_dataset(base_path, labels):
             all_embeddings.append(audio_to_embedding(removed))
             all_labels.append(idx)
 
-    # Remove first 1s and stretch rate=0.9,
-    for idx, label in enumerate(labels):
-        folder = base_path / label
-        files = list(folder.glob("*.amr"))
-        if not files:
-            print(f"[WARN] No files found in {folder}")
-            continue
-        for f in files:
-            audio = load_wav(str(f))
-            # removed = removeFirst(
-            #     audio,
-            #     seconds=1,
-            # )
-            removed = stretch_audio(
-                audio,
-                rate=1.2,
-            )
-            training_count += 1
-            all_embeddings.append(audio_to_embedding(removed))
-            all_labels.append(idx)
-
-    # Stretch 0.8
+    # stretch rate=0.8,
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.amr"))
@@ -374,7 +287,7 @@ def build_dataset(base_path, labels):
             all_embeddings.append(audio_to_embedding(removed))
             all_labels.append(idx)
 
-    # Time mask 0.5s
+    # Time mask 0.1s
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.amr"))
@@ -386,60 +299,13 @@ def build_dataset(base_path, labels):
             removed = time_mask(
                 audio,
                 sr=16000,
-                mask_duration=0.5,
+                mask_duration=0.1,
             )
-            # listen(removed)
-            # input()
             training_count += 1
             all_embeddings.append(audio_to_embedding(removed))
             all_labels.append(idx)
 
-    # Reverb decay=10 and remove first 2s
-    # for idx, label in enumerate(labels):
-    #     folder = base_path / label
-    #     files = list(folder.glob("*.amr"))
-    #     if not files:
-    #         print(f"[WARN] No files found in {folder}")
-    #         continue
-    #     for f in files:
-    #         audio = load_wav(str(f))
-    #         removed = add_reverb(
-    #             audio,
-    #             sr=16000,
-    #             decay=10,
-    #         )
-    #         # removed = removeFirst(removed, seconds=2)
-    #         # listen(removed)
-    #         # input()
-    #         training_count += 1
-    #         all_embeddings.append(audio_to_embedding(removed))
-    #         all_labels.append(idx)
-
-    #     # Time mask 0.5s
-
-    # Time mask 0.5s again
-    for idx, label in enumerate(labels):
-        folder = base_path / label
-        files = list(folder.glob("*.amr"))
-        if not files:
-            print(f"[WARN] No files found in {folder}")
-            continue
-        for f in files:
-            audio = load_wav(str(f))
-            removed = time_mask(
-                audio,
-                sr=16000,
-                mask_duration=0.5,
-            )
-            # listen(removed)
-            # input()
-            training_count += 1
-            all_embeddings.append(audio_to_embedding(removed))
-            all_labels.append(idx)
-
-        # Time mask 0.5s again
-
-    # Time mask 0.2s 4 times
+    # Time mask 0.1s 4 times
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.amr"))
@@ -475,7 +341,7 @@ def build_dataset(base_path, labels):
             all_embeddings.append(audio_to_embedding(removed))
             all_labels.append(idx)
 
-    # Time mask 0.2s 4 times and remove 2s
+    # Time mask 0.1s 4 times and add random volume
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.amr"))
@@ -484,44 +350,29 @@ def build_dataset(base_path, labels):
             continue
         for f in files:
             audio = load_wav(str(f))
-            # removed = removeFirst(
-            #     audio,
-            #     seconds=2,
-            # )
-            removed = time_mask(
+            removed = add_random_volume(
                 audio,
-                sr=16000,
-                mask_duration=0.2,
             )
-            # listen(removed)
-            # input()
-            training_count += 1
-            all_embeddings.append(audio_to_embedding(removed))
-            all_labels.append(idx)
-
-        # Time mask 0.5s 4 times and remove 2s
-
-    # Time mask 0.2s and add reverb 2
-    for idx, label in enumerate(labels):
-        folder = base_path / label
-        files = list(folder.glob("*.amr"))
-        if not files:
-            print(f"[WARN] No files found in {folder}")
-            continue
-        for f in files:
-            audio = load_wav(str(f))
-            # removed = add_reverb(
-            #     audio,
-            #     sr=16000,
-            #     decay=2,
-            # )
             removed = time_mask(
-                audio,
+                removed,
                 sr=16000,
-                mask_duration=0.2,
+                mask_duration=0.1,
             )
-            # listen(removed)
-            # input()
+            removed = time_mask(
+                removed,
+                sr=16000,
+                mask_duration=0.1,
+            )
+            removed = time_mask(
+                removed,
+                sr=16000,
+                mask_duration=0.1,
+            )
+            removed = time_mask(
+                removed,
+                sr=16000,
+                mask_duration=0.1,
+            )
             training_count += 1
             all_embeddings.append(audio_to_embedding(removed))
             all_labels.append(idx)
@@ -576,34 +427,7 @@ def build_validation_dataset(
             all_embeddings.append(audio_to_embedding(audio))
             all_labels.append(idx)
 
-            # clone 3: stretch
-            # max rate 1.3
-            stretch = stretch_audio(
-                audio,
-                rate=1.3,
-            )
-            valiadtion_count += 1
-            all_embeddings.append(audio_to_embedding(stretch))
-            all_labels.append(idx)
-
-    # # add white noise
-    # for idx, label in enumerate(labels):
-    #     folder = base_path / label
-    #     files = list(folder.glob("*.amr"))
-    #     if not files:
-    #         print(f"[WARN] No files found in {folder}")
-    #         continue
-    #     for f in files:
-    #         audio = load_wav(str(f))
-    #         noise = add_white_noise(
-    #             audio,
-    #             noise_factor=0.1,
-    #         )
-    #         valiadtion_count += 1
-    #         all_embeddings.append(audio_to_embedding(noise))
-    #         all_labels.append(idx)
-
-    # Remove first 3s add random volume
+    # add white noise
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.amr"))
@@ -612,18 +436,29 @@ def build_validation_dataset(
             continue
         for f in files:
             audio = load_wav(str(f))
-            # removed = removeFirst(
-            #     audio,
-            #     seconds=3,
-            # )
-            # all_embeddings.append(audio_to_embedding(removed))
-            # all_labels.append(idx)
+            noise = add_white_noise(
+                audio,
+                noise_factor=0.07,
+            )
+            valiadtion_count += 1
+            all_embeddings.append(audio_to_embedding(noise))
+            all_labels.append(idx)
+
+    # add random volume
+    for idx, label in enumerate(labels):
+        folder = base_path / label
+        files = list(folder.glob("*.amr"))
+        if not files:
+            print(f"[WARN] No files found in {folder}")
+            continue
+        for f in files:
+            audio = load_wav(str(f))
             removed = add_random_volume(audio)
             valiadtion_count += 1
             all_embeddings.append(audio_to_embedding(removed))
             all_labels.append(idx)
 
-    # Time mask 0.3s 4 times
+    # Time mask 0.1s 4 times
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.amr"))
@@ -635,15 +470,12 @@ def build_validation_dataset(
             removed = time_mask(
                 audio,
                 sr=16000,
-                mask_duration=0.3,
+                mask_duration=0.1,
             )
-            # valiadtion_count += 1
-            # all_embeddings.append(audio_to_embedding(removed))
-            # all_labels.append(idx)
             removed = time_mask(
                 removed,
                 sr=16000,
-                mask_duration=0.3,
+                mask_duration=0.1,
             )
             valiadtion_count += 1
             all_embeddings.append(audio_to_embedding(removed))
@@ -651,7 +483,7 @@ def build_validation_dataset(
             removed = time_mask(
                 removed,
                 sr=16000,
-                mask_duration=0.3,
+                mask_duration=0.1,
             )
             # listen(removed)
             # input()

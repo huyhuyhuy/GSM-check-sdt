@@ -14,10 +14,12 @@ from pydub import AudioSegment
 BASE_PATH = Path(__file__).parent
 # TEST_PATH = BASE_PATH / "dataset/testing"
 # TEST_PATH = BASE_PATH / "dataset/prepare_dataset"
-TEST_PATH = BASE_PATH / "dataset_v2/validate/incorrect"
-# TEST_PATH = BASE_PATH / "dataset/vietel/unknown"
+LABEL = "alive1"
+TEST_PATH = BASE_PATH / "dataset_v2/validate/" / LABEL
+TEST_PATH = BASE_PATH / "dataset_v2/vietel/" / LABEL
+# TEST_PATH = BASE_PATH / "dataset_v2/b"
 
-FORCE_LABEL = 5
+
 MODEL_PATH = BASE_PATH / "audio_classification_v2.keras"
 # MODEL_PATH = BASE_PATH / "audio_classification_wav2vec2.keras"
 
@@ -27,12 +29,15 @@ labels = [
     "alive2",  # leave message
     # "alive3",  # leave message - busy
     "be_blocked",
-    # "be_blocked_and_incorrect",  # merged class with the same vocal
+    # "be_blocked_and_incorrect",
     "can_not_connect",
     # "has_no_money",
     "incorrect",
     # "unknown",
 ]
+
+FORCE_LABEL = labels.index(LABEL)
+# FORCE_LABEL = None
 num_classes = len(labels)
 
 # =========================
@@ -49,11 +54,10 @@ classifier = tf.keras.models.load_model(MODEL_PATH, compile=False)
 # =========================
 # Audio utils
 # =========================
-def load_wav(filename: str):
+def load_wav(filename: str, target_sample_rate=16000):
 
     # v2
 
-    # audio, sr = sf.read(filename)
     audio_segment = AudioSegment.from_file(filename)
     audio_segment = audio_segment.set_channels(1).set_frame_rate(target_sample_rate)
     wav_io = io.BytesIO()
