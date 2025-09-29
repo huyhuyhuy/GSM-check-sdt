@@ -4,8 +4,8 @@ import threading
 import time
 import json
 import os
-from gsm_manager_enhanced import GSMManager
-from file_manager import FileManager
+# from gsm_manager_enhanced import GSMManager
+# from file_manager import FileManager
 
 class PhoneCheckerGUI:
     def __init__(self, root):
