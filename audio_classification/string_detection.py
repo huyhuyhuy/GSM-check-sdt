@@ -3,7 +3,7 @@ labels = [
     "be_blocked",
     "can_not_connect",
     "incorrect",
-    "rinback_tone",
+    "ringback_tone",
     "waiting_tone",
     "mute",
 ]
@@ -56,11 +56,11 @@ def keyword_in_text(input_text: str) -> int:
     input_text = input_text.lower()
     if input_text.strip() == "":
         # return index of "mute"
-        return input_text.index("mute")
+        return labels.index("mute")
 
     if len(input_text) <= MAX_WAITING_TONE:
         # define keyword if needed
-        return input_text.index("waiting_tone")
+        return labels.index("waiting_tone")
 
     for i, kws in enumerate(keyword_labels):
         for kw in kws:
@@ -68,17 +68,18 @@ def keyword_in_text(input_text: str) -> int:
                 return i
 
     # ringback tone
-    return input_text.index("rinback_tone")
+    return labels.index("ringback_tone")
 
 
 if __name__ == "__main__":
     test_texts = [
+        "tút tút",
         "đang tạm khóa khuyên quý khách vui lòng tải lại tàu tích hợp lâm thu hoạch cho biết hết câu của quý ông",
-        "cất tạm khóa khuyên quý khách vui lòng hợp lấy đâu kích thước lâm thôi du khách ta kích thích tố quyết định",
-        "khám khóa khuyên quý khách vui lòng hỏi lại thao tịch hữu lượm thu hợp cho lợi ích hấp pháp của quý sao được",
+        "xin quý khách vui lòng để lại lời nhắn sau tiếng bíp",
+        "đá asdasdkas ada sasjd adasd ấd",
     ]
 
     for text in test_texts:
         print(f"Input: {text}")
-        print(f"Output: {keyword_in_text(text)}")
+        print(f"Output: {keyword_in_text(text)} - {labels[keyword_in_text(text)]}")
         print()
