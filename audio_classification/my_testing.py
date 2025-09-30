@@ -14,7 +14,7 @@ from pydub import AudioSegment
 BASE_PATH = Path(__file__).parent
 # TEST_PATH = BASE_PATH / "dataset/testing"
 # TEST_PATH = BASE_PATH / "dataset/prepare_dataset"
-LABEL = "alive1"
+LABEL = "alive2"
 TEST_PATH = BASE_PATH / "dataset_v2/validate/" / LABEL
 TEST_PATH = BASE_PATH / "dataset_v2/vietel/" / LABEL
 # TEST_PATH = BASE_PATH / "dataset_v2/b"
@@ -27,12 +27,11 @@ labels = [
     "alive",  # ringback tone
     "alive1",  # waiting sounds
     "alive2",  # leave message
-    # "alive3",  # leave message - busy
     "be_blocked",
     # "be_blocked_and_incorrect",
     "can_not_connect",
     # "has_no_money",
-    "incorrect",
+    # "incorrect",
     # "unknown",
 ]
 

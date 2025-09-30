@@ -24,12 +24,11 @@ labels = [
     "alive",  # ringback tone
     "alive1",  # waiting sounds
     "alive2",  # leave message
-    # "alive3",  # leave message - busy
     "be_blocked",
     # "be_blocked_and_incorrect",
     "can_not_connect",
     # "has_no_money",
-    "incorrect",
+    # "incorrect",
     # "unknown",
 ]
 num_classes = len(labels)
@@ -175,12 +174,13 @@ def build_dataset(base_path, labels):
             continue
         for f in files:
             audio = load_wav(str(f))
-            noise = add_white_noise(
+            # if idx != labels.index("unknown"):
+            audio = add_white_noise(
                 audio,
                 noise_factor=0.01,
             )
             training_count += 1
-            all_embeddings.append(audio_to_embedding(noise))
+            all_embeddings.append(audio_to_embedding(audio))
             all_labels.append(idx)
 
     # add random volume
@@ -224,12 +224,13 @@ def build_dataset(base_path, labels):
             continue
         for f in files:
             audio = load_wav(str(f))
-            removed = add_white_noise(
+            # if idx != labels.index("unknown"):
+            audio = add_white_noise(
                 audio,
                 noise_factor=0.02,
             )
             training_count += 1
-            all_embeddings.append(audio_to_embedding(removed))
+            all_embeddings.append(audio_to_embedding(audio))
             all_labels.append(idx)
 
     # stretch rate=0.8,
@@ -262,6 +263,7 @@ def build_dataset(base_path, labels):
                 audio,
                 rate=0.9,
             )
+            # if idx != labels.index("unknown"):
             removed = add_white_noise(
                 removed,
                 noise_factor=0.01,
@@ -279,15 +281,16 @@ def build_dataset(base_path, labels):
             continue
         for f in files:
             audio = load_wav(str(f))
-            removed = add_pink_noise(
+            # if idx != labels.index("unknown"):
+            audio = add_pink_noise(
                 audio,
                 amount=0.3,
             )
             training_count += 1
-            all_embeddings.append(audio_to_embedding(removed))
+            all_embeddings.append(audio_to_embedding(audio))
             all_labels.append(idx)
 
-    # Time mask 0.1s
+    # Time mask 1s
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.amr"))
@@ -296,16 +299,17 @@ def build_dataset(base_path, labels):
             continue
         for f in files:
             audio = load_wav(str(f))
-            removed = time_mask(
-                audio,
-                sr=16000,
-                mask_duration=0.1,
-            )
+            if idx != labels.index("alive1"):
+                audio = time_mask(
+                    audio,
+                    sr=16000,
+                    mask_duration=1,
+                )
             training_count += 1
-            all_embeddings.append(audio_to_embedding(removed))
+            all_embeddings.append(audio_to_embedding(audio))
             all_labels.append(idx)
 
-    # Time mask 0.1s 4 times
+    # Time mask 0.3s 4 times
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.amr"))
@@ -314,34 +318,37 @@ def build_dataset(base_path, labels):
             continue
         for f in files:
             audio = load_wav(str(f))
-            removed = time_mask(
-                audio,
-                sr=16000,
-                mask_duration=0.2,
-            )
+            if idx != labels.index("alive1"):
+                audio = time_mask(
+                    audio,
+                    sr=16000,
+                    mask_duration=0.3,
+                )
             training_count += 1
-            all_embeddings.append(audio_to_embedding(removed))
+            all_embeddings.append(audio_to_embedding(audio))
             all_labels.append(idx)
-            removed = time_mask(
-                removed,
-                sr=16000,
-                mask_duration=0.25,
-            )
+            if idx != labels.index("alive1"):
+                audio = time_mask(
+                    audio,
+                    sr=16000,
+                    mask_duration=0.3,
+                )
             training_count += 1
-            all_embeddings.append(audio_to_embedding(removed))
+            all_embeddings.append(audio_to_embedding(audio))
             all_labels.append(idx)
-            removed = time_mask(
-                removed,
-                sr=16000,
-                mask_duration=0.25,
-            )
+            if idx != labels.index("alive1"):
+                audio = time_mask(
+                    audio,
+                    sr=16000,
+                    mask_duration=0.3,
+                )
             # listen(removed)
             # input()
             training_count += 1
-            all_embeddings.append(audio_to_embedding(removed))
+            all_embeddings.append(audio_to_embedding(audio))
             all_labels.append(idx)
 
-    # Time mask 0.1s 4 times and add random volume
+    # Time mask 0.5s 4 times and add random volume
     for idx, label in enumerate(labels):
         folder = base_path / label
         files = list(folder.glob("*.amr"))
@@ -353,26 +360,27 @@ def build_dataset(base_path, labels):
             removed = add_random_volume(
                 audio,
             )
-            removed = time_mask(
-                removed,
-                sr=16000,
-                mask_duration=0.1,
-            )
-            removed = time_mask(
-                removed,
-                sr=16000,
-                mask_duration=0.1,
-            )
-            removed = time_mask(
-                removed,
-                sr=16000,
-                mask_duration=0.1,
-            )
-            removed = time_mask(
-                removed,
-                sr=16000,
-                mask_duration=0.1,
-            )
+            if idx != labels.index("alive1"):
+                removed = time_mask(
+                    removed,
+                    sr=16000,
+                    mask_duration=0.5,
+                )
+                removed = time_mask(
+                    removed,
+                    sr=16000,
+                    mask_duration=0.5,
+                )
+                removed = time_mask(
+                    removed,
+                    sr=16000,
+                    mask_duration=0.5,
+                )
+                removed = time_mask(
+                    removed,
+                    sr=16000,
+                    mask_duration=0.5,
+                )
             training_count += 1
             all_embeddings.append(audio_to_embedding(removed))
             all_labels.append(idx)
@@ -386,12 +394,11 @@ def build_dataset(base_path, labels):
         for f in files:
             audio = load_wav(str(f))
             noise = add_random_volume(audio)
+            # if idx != labels.index("unknown"):
             noise = add_pink_noise(
                 noise,
                 amount=0.3,
             )
-            # listen(noise)
-            # input()
             training_count += 1
             all_embeddings.append(audio_to_embedding(noise))
             all_labels.append(idx)
@@ -436,12 +443,13 @@ def build_validation_dataset(
             continue
         for f in files:
             audio = load_wav(str(f))
-            noise = add_white_noise(
+            # if idx != labels.index("unknown"):
+            audio = add_white_noise(
                 audio,
-                noise_factor=0.07,
+                noise_factor=0.05,
             )
             valiadtion_count += 1
-            all_embeddings.append(audio_to_embedding(noise))
+            all_embeddings.append(audio_to_embedding(audio))
             all_labels.append(idx)
 
     # add random volume
@@ -467,28 +475,30 @@ def build_validation_dataset(
             continue
         for f in files:
             audio = load_wav(str(f))
-            removed = time_mask(
-                audio,
-                sr=16000,
-                mask_duration=0.1,
-            )
-            removed = time_mask(
-                removed,
-                sr=16000,
-                mask_duration=0.1,
-            )
+            if idx != labels.index("alive1"):
+                audio = time_mask(
+                    audio,
+                    sr=16000,
+                    mask_duration=0.1,
+                )
+                audio = time_mask(
+                    audio,
+                    sr=16000,
+                    mask_duration=0.1,
+                )
             valiadtion_count += 1
-            all_embeddings.append(audio_to_embedding(removed))
+            all_embeddings.append(audio_to_embedding(audio))
             all_labels.append(idx)
-            removed = time_mask(
-                removed,
-                sr=16000,
-                mask_duration=0.1,
-            )
+            if idx != labels.index("alive1"):
+                audio = time_mask(
+                    audio,
+                    sr=16000,
+                    mask_duration=0.1,
+                )
             # listen(removed)
             # input()
             valiadtion_count += 1
-            all_embeddings.append(audio_to_embedding(removed))
+            all_embeddings.append(audio_to_embedding(audio))
             all_labels.append(idx)
 
     X = tf.stack(all_embeddings)
