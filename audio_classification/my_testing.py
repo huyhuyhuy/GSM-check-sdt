@@ -5,6 +5,8 @@ import soundfile as sf
 from scipy.signal import resample_poly
 from pathlib import Path
 import sounddevice as sd
+import io
+from pydub import AudioSegment
 
 # =========================
 # Config
@@ -12,26 +14,29 @@ import sounddevice as sd
 BASE_PATH = Path(__file__).parent
 # TEST_PATH = BASE_PATH / "dataset/testing"
 # TEST_PATH = BASE_PATH / "dataset/prepare_dataset"
-TEST_PATH = BASE_PATH / "dataset/validate/unknown"
-TEST_PATH = BASE_PATH / "dataset/vietel/unknown"
+LABEL = "alive2"
+TEST_PATH = BASE_PATH / "dataset_v2/validate/" / LABEL
+TEST_PATH = BASE_PATH / "dataset_v2/vietel/" / LABEL
+# TEST_PATH = BASE_PATH / "dataset_v2/b"
 
-FORCE_LABEL = 4
 
-MODEL_PATH = BASE_PATH / "audio_classification.keras"
+MODEL_PATH = BASE_PATH / "audio_classification_v2.keras"
 # MODEL_PATH = BASE_PATH / "audio_classification_wav2vec2.keras"
 
 labels = [
     "alive",  # ringback tone
     "alive1",  # waiting sounds
     "alive2",  # leave message
-    # "alive3",  # leave message - busy
-    # "be_blocked",
-    "be_blocked_and_incorrect",  # merged class with the same vocal
+    "be_blocked",
+    # "be_blocked_and_incorrect",
     "can_not_connect",
-    "has_no_money",
+    # "has_no_money",
     # "incorrect",
-    "unknown",
+    # "unknown",
 ]
+
+FORCE_LABEL = labels.index(LABEL)
+# FORCE_LABEL = None
 num_classes = len(labels)
 
 # =========================
@@ -48,24 +53,43 @@ classifier = tf.keras.models.load_model(MODEL_PATH, compile=False)
 # =========================
 # Audio utils
 # =========================
-def load_wav(filename: str):
-    # audio, sr = librosa.load(
-    #     filename,
-    #     # mono=True,
-    #     # sr=16000,
-    # )
-    audio, sr = sf.read(filename)
-    if audio.ndim > 1:  # stereo -> mono
-        # audio = np.mean(audio, axis=1)
-        audio = audio[:, 0]
-        # audio = audio[:, 0] + audio[:, 1]
-        # audio = audio[:, 1]
-        # audio = audio[:, 0]
+def load_wav(filename: str, target_sample_rate=16000):
 
-    # resample về 16kHz, nhưng giữ nguyên tốc độ/nội dung
+    # v2
+
+    audio_segment = AudioSegment.from_file(filename)
+    audio_segment = audio_segment.set_channels(1).set_frame_rate(target_sample_rate)
+    wav_io = io.BytesIO()
+    audio_segment.export(wav_io, format="wav")
+    wav_io.seek(0)
+    audio, sr = sf.read(wav_io)
+    if audio.ndim > 1:  # stereo -> mono
+        audio = audio[:, 0]
     if sr != 16000:
         audio = resample_poly(audio, 16000, sr)
+
+    # listen(audio)
+    # input()
     return audio.astype(np.float32)
+
+    # v1
+    # # audio, sr = librosa.load(
+    # #     filename,
+    # #     # mono=True,
+    # #     # sr=16000,
+    # # )
+    # audio, sr = sf.read(filename)
+    # if audio.ndim > 1:  # stereo -> mono
+    #     # audio = np.mean(audio, axis=1)
+    #     audio = audio[:, 0]
+    #     # audio = audio[:, 0] + audio[:, 1]
+    #     # audio = audio[:, 1]
+    #     # audio = audio[:, 0]
+
+    # # resample về 16kHz, nhưng giữ nguyên tốc độ/nội dung
+    # if sr != 16000:
+    #     audio = resample_poly(audio, 16000, sr)
+    # return audio.astype(np.float32)
 
 
 def audio_to_embedding(audio):
@@ -93,7 +117,7 @@ def listen(audio):
 # =========================
 print("🔹 Running inference on testing dataset...")
 
-files = list(TEST_PATH.glob("*.wav"))
+files = list(TEST_PATH.glob("*.amr"))
 if not files:
     print(f"[WARN] No .wav files found in {TEST_PATH}")
 else:
