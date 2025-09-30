@@ -10,6 +10,8 @@ python audio_classification/speech_to_text_vosk.py
 python audio_classification/speech_to_text_whisper_api.py
 python audio_classification/speech_to_text_whisper_local.py
 
+python audio_classification/string_detection.py
+
 
 python audio_classification/counting_data.py
 

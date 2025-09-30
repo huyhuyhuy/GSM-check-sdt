@@ -3,6 +3,9 @@ labels = [
     "be_blocked",
     "can_not_connect",
     "incorrect",
+    "rinback_tone",
+    "waiting_tone",
+    "mute",
 ]
 
 keyword_labels = [
@@ -31,6 +34,7 @@ keyword_labels = [
         "tạm thời không liên lạc được",
         "không liên lạc được",
         "không liên lạc",
+        "tạm thời không",
     ],
     [
         "hoặc liên hệ số một chín tám để được hỗ trợ",
@@ -45,13 +49,26 @@ keyword_labels = [
     ],
 ]
 
+MAX_WAITING_TONE = 8
 
-def keyword_in_text(input_text: str, keywords: list[str]) -> bool:
+
+def keyword_in_text(input_text: str) -> int:
     input_text = input_text.lower()
-    for kw in keywords:
-        if kw in input_text:
-            return True
-    return False
+    if input_text.strip() == "":
+        # return index of "mute"
+        return input_text.index("mute")
+
+    if len(input_text) <= MAX_WAITING_TONE:
+        # define keyword if needed
+        return input_text.index("waiting_tone")
+
+    for i, kws in enumerate(keyword_labels):
+        for kw in kws:
+            if kw in input_text:
+                return i
+
+    # ringback tone
+    return input_text.index("rinback_tone")
 
 
 if __name__ == "__main__":
@@ -63,7 +80,5 @@ if __name__ == "__main__":
 
     for text in test_texts:
         print(f"Input: {text}")
-        for i, kws in enumerate(keyword_labels):
-            if keyword_in_text(text, kws):
-                print(f"  => Matched label: {labels[i]}")
+        print(f"Output: {keyword_in_text(text)}")
         print()
