@@ -1,0 +1,48 @@
+Phản hồi +COLP giúp bạn xác định:
+Người kia đã nhấc máy
+
+AT+CLCC
+-----------------
++CLCC: <idx>,<dir>,<status>,<mode>,<mpty>,"<number>",<type>
+| Trường     | Ý nghĩa                                      |
+| ---------- | -------------------------------------------- |
+| `<idx>`    | Chỉ số cuộc gọi (thường là 1)                |
+| `<dir>`    | 0 = gọi đi, 1 = gọi đến                      |
+| `<status>` | Trạng thái cuộc gọi:                         |
+|            | 0 = **active** (đã nhấc máy)                 |
+|            | 1 = held                                     |
+|            | 2 = **dialing** (đang quay số)               |
+|            | 3 = **alerting** (đang đổ chuông ở bên kia)  |
+|            | 4 = incoming                                 |
+|            | 5 = waiting                                  |
+|            | 6 = kết thúc                                 |
+| `<mode>`   | 0 = thoại (voice), 1 = data, 2 = fax         |
+| `<mpty>`   | Cuộc gọi đơn (0) hoặc hội thoại (1)          |
+| `<number>` | Số điện thoại đang liên quan                 |
+| `<type>`   | Loại số (thường là 129 – số quốc gia nội bộ) |
+
+
+| Phản hồi từ modem | Ý nghĩa khi gọi                                                    |
+| ----------------- | ------------------------------------------------------------------ |
+| `RINGING`         | Đang đổ chuông phía người nhận                                     |
+| `RING`            | (khi có **cuộc gọi đến**, không phải gọi đi)                       |
+| `CONNECT`         | ✅ Người nhận **đã nhấc máy**                                       |
+| `NO CARRIER`      | Cuộc gọi kết thúc (không nhấc máy, tắt máy, chặn...)               |
+| `BUSY`            | Máy bận                                                            |
+| `NO ANSWER`       | Không trả lời (tuỳ modem hỗ trợ)                                   |
+| `ERROR`           | Lỗi modem hoặc SIM                                                 |
+| `NO DIALTONE`     | Không có tín hiệu (thường gặp ở điện thoại bàn analog, hiếm ở GSM) |
+| `+CME ERROR: xx`  | Lỗi theo mã chuẩn GSM (ví dụ: SIM not inserted...)                 |
+
+
+AT+CREG? kiểm tra sim đăng ký mạng chưa +CREG: 0,2/3/4 → Đang tìm hoặc bị cấm
+AT+COPS? kiểm tra tên nhà mạng
+AT+CSQ kiểm tra sóng
+
+tôi đang muốn 1 tool python có chức năng điều khiển thiết bị GSM gọi đồng thời hàng loạt từ 32 cổng SIM trên modem GSM tới các số điện thoại 
+trong file list_sdt.txt
+
+khi gọi sẽ tiến hành thu âm 15 giây. trong 15 giây này cũng liên tục gửi lệnh AT+CLCC để xác định xem người nghe có nhấc máy không?
+nếu có nhấc máy -> dừng ghi âm luôn -> lưu kết quả là HOAT DONG
+nếu không nhấc máy sau 15 giây -> gửi lệnh để tải bản ghi âm về, tiến hàng speak to text và bắt từ khác để xác định loại.
+cuối cùng xuất file excel, với mỗi loại là 1 cột.
