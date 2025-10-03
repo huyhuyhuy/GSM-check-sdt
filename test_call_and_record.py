@@ -258,15 +258,15 @@ def process_single_call(ser, phone):
     print(f"\n=== Gọi tới: {phone} ===")
     print(f"File sẽ lưu: {local_filename}")
 
-    # Gọi điện và đợi 1 giây
+    # Gọi điện 
     print("Đang gọi...")
     call_resp = send_at(ser, f"ATD{phone};", timeout=5)
     if "ERROR" in call_resp:
         print("❌ Lỗi khi gọi điện")
         return False
     
-    print("✅ Đã gọi, đợi cuộc gọi được thiết lập...")
-    time.sleep(1.5)  # Giảm từ 2s xuống 1.5s
+    # Đợi 1.5 giây
+    time.sleep(1.5)
     
     # Kiểm tra trạng thái cuộc gọi
     call_status = send_at(ser, "AT+CPAS", timeout=2)
@@ -298,9 +298,9 @@ def process_single_call(ser, phone):
     stop_resp = send_at(ser, cmd_stop, timeout=2)
     print(f"Response dừng ghi âm: {stop_resp}")
     
-    # Đợi module lưu file hoàn toàn (giảm từ 1s xuống 0.5s)
+    # Đợi module lưu file hoàn toàn (1s)
     print("⏳ Đợi module lưu file...")
-    time.sleep(0.5)
+    time.sleep(1)
     
     # Ngắt cuộc gọi bằng ATH
     print("📞 Ngắt cuộc gọi...")

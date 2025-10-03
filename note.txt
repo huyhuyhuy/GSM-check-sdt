@@ -1,10 +1,3 @@
-tôi có 10000 số điện thoại (lưu trong file txt - mỗi số là 1 dòng) cần check xem số nào còn hoạt động và số nào đang thuê bao quý khách vừa gọi k liên lạc được.
-tôi muốn viết tool với thiết GSM 32 cổng dùng chip XR21V1414 để check số nào đang thuê bao quý khách vừa gọi k liên lạc được.
-cần tối đa hiệu năng và tốc độ, tận dụng hết được 32 cổng
-
-
-----------------------------
-
 0989931007
 0773870929
 0348942793
