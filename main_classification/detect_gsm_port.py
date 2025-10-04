@@ -364,5 +364,5 @@ def main():
     else:
         print("\n[INFO] Khong tim thay port tra loi 'OK'. Kiem tra driver/permission/thiet bi.")
 
-if __name__ == "__main__":
-    main()
+# File này chỉ chứa các hàm utility để quét cổng GSM
+# Không cần hàm main vì logic chính đã được chuyển vào GSMInstance và Controller

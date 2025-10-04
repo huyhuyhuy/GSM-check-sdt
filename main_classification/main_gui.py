@@ -199,11 +199,8 @@ class AudioClassificationGUI:
                 self.display_gsm_ports(gsm_ports)
                 self.add_log(f"✅ Tìm thấy {len(gsm_ports)} cổng GSM")
                 
-                # Khởi tạo các thiết bị GSM
-                if self.controller.initialize_gsm_devices(gsm_ports):
-                    self.add_log("✅ Khởi tạo thiết bị GSM thành công!")
-                else:
-                    self.add_log("❌ Không thể khởi tạo thiết bị GSM")
+                # GSM instances đã được tạo trong scan_gsm_ports
+                self.add_log("✅ GSM instances đã sẵn sàng!")
             else:
                 self.add_log("⚠️ Không tìm thấy cổng GSM nào")
                 # Hiển thị thông báo
@@ -223,6 +220,7 @@ class AudioClassificationGUI:
                 str(i),
                 gsm_info["port"],
                 gsm_info["signal"],  # Thay vì status, dùng signal
+                gsm_info.get("network_operator", "Không xác định"),
                 gsm_info["phone_number"],
                 gsm_info["balance"]
             )
@@ -266,7 +264,7 @@ class AudioClassificationGUI:
             messagebox.showwarning("Cảnh báo", "Vui lòng chọn file danh sách số điện thoại trước!")
             return
         
-        if not self.controller.gsm_devices:
+        if not self.controller.gsm_instances:
             messagebox.showerror("Lỗi", "Không có thiết bị GSM nào được kết nối!")
             return
         
@@ -322,14 +320,23 @@ class AudioClassificationGUI:
     
     def on_closing(self):
         """Xử lý khi đóng ứng dụng"""
-        # Dừng xử lý nếu đang chạy
-        if self.controller.is_running:
-            self.controller.stop_processing()
-        
-        # Ngắt kết nối tất cả GSM devices
-        self.controller.disconnect_all()
-        
-        self.root.destroy()
+        try:
+            # Dừng xử lý nếu đang chạy
+            if self.controller.is_running:
+                self.add_log("🛑 Đang dừng xử lý...")
+                self.controller.stop_processing()
+            
+            # Reset cuối cùng tất cả GSM instances (AT+CFUN=1,1)
+            self.add_log("🔄 Đang reset cuối cùng tất cả GSM instances...")
+            self.controller.final_reset_all_instances()
+            
+            self.add_log("✅ Đóng chương trình thành công!")
+            
+        except Exception as e:
+            self.add_log(f"❌ Lỗi khi đóng chương trình: {e}")
+        finally:
+            # Luôn đóng cửa sổ
+            self.root.destroy()
 
 def main():
     root = tk.Tk()

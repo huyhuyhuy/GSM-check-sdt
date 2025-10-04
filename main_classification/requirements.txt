@@ -10,3 +10,4 @@ pandas>=1.5.0
 torch>=1.13.0
 transformers>=4.21.0
 soundfile>=0.10.0
+python-gsmmodem-new>=1.0.0

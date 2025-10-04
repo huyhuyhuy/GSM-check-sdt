@@ -9,16 +9,39 @@ cuối cùng xuất file excel, với mỗi loại là 1 cột.
 
 
 Chi tiết:
-khi khời chạy chương trình GSM mặc định ban đầu có baudrate là 15200.
-ta sẽ quét toàn bộ các cổng com để xác định được các cổng com của GSM (có thể lên tới 32 cổng).
-tiếp theo ta sẽ lấy thông tin từng cổng (tình trạng sóng, số điện thoại, số dư còn lại của sim) và hiển thị lên treeview.
+khi bắt đầu chạy chương trình, GSM lúc này ở trạng thái default: baudrate = 115200, 
+ta thực hiện đa luồng quét toàn bộ các cổng com để tìm các cổng GSM (tôi thấy đã ok)
+- sau khi có danh sách các cổng com gsm, thì mỗi cổng com sẽ được khởi tạo như là 1 thực thể GSM (instance), 
+và mỗi thực thể này sẽ có tên cổng riêng, kết nối riêng, thông tin riêng.
+- từ đó các thực thể này sẽ tiếp tục gửi lệnh để lấy tín hiệu sóng (AT+CSQ), tên nhà mạng (AT+COPS?)
+-> tiếp đó lấy các thông tin số điện thoại, số dư (mạng Vietnamobile dùng *102# để lấy thông tin số điện thoại và số dư, các nhà mạng còn lại thì dùng *101#)
 
-tiếp đến, ta bắt đầu tiến hành reset baudrate từ 115200 -> 921600 -> tiến hành gọi + (ghi âm + check CLCC) -> đưa ra kết quả.
-tương tự như file call_and_record.py nhưng bây giờ sẽ tích hợp vào hệ thống đa luồng cho 32 sim trên GSM.
+-> lúc này các thực thể gsm (instance)  cần reset baudrate = 921600 để phục vụ cho việc tải file ghi âm sau này.
+khi resetbaurate thì ta cũng cần đóng kết nối và kết nối lại với baudrate mới.
+
+-> tiếp theo đó khi người dùng nhập đường dẫn đến file chứa danh sách các số cần gọi để phân loại -> nhấn bắt đầu
+-> các số cần gọi để phân loại sẽ được chia đều cho các thực thể GSM (instance). 
+các thực thể sẽ hoạt động riêng lần lượt gọi số của mình, tiến hành thu âm 15 giây, check AT+CLCC -> speak to text -> phân loại.
+* cụ thể: gửi lệnh ATD để gọi, chờ 1,5 giây tiến hành gửi lệnh thu âm trong 15 giây, và trong 15 giây này cũng  liên tục gửi lệnh AT+CLCC (0,5 giây 1 lần)
+đọc phản hồi thấy có chứa +COLP -> dừng ghi âm luôn, kết luận kết quả phân loại là "hoạt động" luôn. Ngược lại nếu sau 15 giây k có phản hồi chứa +COLP thì 
+ta sẽ cần tải file ghi âm vừa xong về, và tiến hành speak to text -> sau đó quastring_detection để phân loại.
+ 
+* mỗi thực thể khi gọi được 100 số cần reset và nghỉ ngơi. khi reset thì baudrate sẽ chuyển về default 115200. 
+nên ta cần kết nối lại với baudrate 115200, thực hiện load lại số dư.
+
+-> tiếp đó gửi lệnh reset baudrate = 921600, 
+sau đó kết nối lại với baudrate 921600 và tiếp tục nhiệm vụ gọi và phân loại số.
+
+-> khi tất cả kết thúc -> có thể sử dụng chức năng xuất excel (trong excel ngoài các số đã phân loại, 
+cũng sẽ có những số bị lỗi không check được, chưa check được trong quá trình của nó - ta cũng lọc các số này ra 1 cột riêng)
+
+-> khi nhấn nút X để thoát chương trình, các thực thể cũng gửi lệnh reset (AT+CFUN=1,1) lần cuối, sau đó mới thoát chương trình
+
+bạn hãy đọc thật kỹ xem có hiểu ý của tôi k? và có thể thực hiện k? có nguy cơ, khó khăn gì k?
 
 
 
-AT+CREG? kiểm tra sim đăng ký mạng chưa +CREG: 0,2/3/4 → Đang tìm hoặc bị cấm
+
 AT+COPS? kiểm tra tên nhà mạng
 AT+CSQ kiểm tra sóng
 AT+QAUDRD=1,"{REMOTE_FILENAME}",{FORMAT},1  # Format 13 -> lệnh ghi âm

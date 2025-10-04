@@ -1,20 +1,24 @@
+"""
+GSM Controller - Điều phối toàn bộ hệ thống GSM
+Quản lý nhiều GSM instances, phân phối số điện thoại, và tổng hợp kết quả
+"""
+
 import threading
 import time
-import queue
 import logging
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 from pathlib import Path
 import os
 from datetime import datetime
 
-from gsm_manager import GSMDevice
-from detect_gsm_port import probe_port_simple, get_signal_info, get_phone_and_balance
+from gsm_instance import GSMInstance
+from detect_gsm_port import scan_gsm_ports_parallel
 from string_detection import keyword_in_text, labels
 from spk_to_text_wav2 import convert_to_wav, transcribe_wav2vec2
 from export_excel import export_results_to_excel
 
 # Cấu hình logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class GSMController:
@@ -22,8 +26,9 @@ class GSMController:
     
     def __init__(self, max_ports: int = 32):
         self.max_ports = max_ports
-        self.gsm_devices: Dict[str, GSMDevice] = {}
-        self.phone_queue = queue.Queue()
+        self.gsm_instances: Dict[str, GSMInstance] = {}
+        self.gsm_ports_list: List[str] = []  # Lưu danh sách cổng GSM
+        self.phone_list: List[str] = []  # Danh sách số điện thoại
         self.results: Dict[str, List[Dict]] = {
             "hoạt động": [],
             "leave_message": [],
@@ -32,11 +37,11 @@ class GSMController:
             "incorrect": [],
             "ringback_tone": [],
             "waiting_tone": [],
-            "mute": []
+            "mute": [],
+            "lỗi": []  # Thêm cột cho các số bị lỗi
         }
         self.is_running = False
         self.is_stopping = False
-        self.call_threads: List[threading.Thread] = []
         self.log_callback = None
         
     def set_log_callback(self, callback):
@@ -50,417 +55,354 @@ class GSMController:
             self.log_callback(message)
     
     def scan_gsm_ports(self) -> List[Dict]:
-        """Quét và phát hiện các cổng GSM"""
+        """Quét và phát hiện các cổng GSM với đa luồng"""
         self.log("🔍 Bắt đầu quét các cổng GSM...")
         
-        # Import từ detect_gsm_port
-        from serial.tools import list_ports
+        # Sử dụng đa luồng để quét cổng
+        gsm_port_list = scan_gsm_ports_parallel(max_workers=10, log_callback=self.log)
         
-        ports = [p.device for p in list_ports.comports()]
+        # Lưu danh sách cổng để reset khi đóng
+        self.gsm_ports_list = gsm_port_list.copy()
+        
         gsm_ports = []
         
-        for port in ports:
+        # Tạo GSM instances cho từng cổng
+        for port in gsm_port_list:
             try:
-                result = probe_port_simple(port)
-                if result.get("ok"):
-                    self.log(f"✅ Tìm thấy GSM tại {port}")
-                    
-                    # Lấy thông tin chi tiết
-                    gsm_info = self._get_detailed_gsm_info(port)
+                self.log(f"📋 [{port}] Đang tạo GSM instance...")
+                
+                # Tạo GSM instance
+                gsm_instance = GSMInstance(port, self.log)
+                
+                # Kết nối và lấy thông tin cơ bản
+                if gsm_instance.connect():
+                    gsm_info = gsm_instance.get_basic_info()
                     gsm_info["port"] = port
                     gsm_info["status"] = "Active"
                     gsm_ports.append(gsm_info)
                     
-                    if len(gsm_ports) >= self.max_ports:
-                        break
-                        
+                    # Reset baudrate lên 921600 ngay sau khi lấy thông tin cơ bản
+                    self.log(f"🔄 [{port}] Đang reset baudrate lên 921600...")
+                    if gsm_instance.reset_baudrate(921600):
+                        self.log(f"✅ [{port}] Reset baudrate thành công")
+                    else:
+                        self.log(f"❌ [{port}] Reset baudrate thất bại")
+                    
+                    # Lưu instance
+                    self.gsm_instances[port] = gsm_instance
+                    
+                    self.log(f"✅ [{port}] GSM instance đã sẵn sàng")
+                else:
+                    self.log(f"❌ [{port}] Không thể kết nối GSM instance")
+                
+                # Đợi một chút giữa các cổng để tránh xung đột
+                time.sleep(0.5)
+                
+                if len(gsm_ports) >= self.max_ports:
+                    break
+                    
             except Exception as e:
-                self.log(f"❌ Lỗi khi quét {port}: {e}")
+                self.log(f"❌ Lỗi khi tạo GSM instance {port}: {e}")
+                # Đợi một chút ngay cả khi có lỗi
+                time.sleep(0.5)
         
-        self.log(f"🎯 Tìm thấy {len(gsm_ports)} cổng GSM")
+        self.log(f"🎯 Tạo thành công {len(gsm_ports)} GSM instances")
         return gsm_ports
-    
-    def _get_detailed_gsm_info(self, port: str) -> Dict:
-        """Lấy thông tin chi tiết của một cổng GSM"""
-        try:
-            from serial import Serial
-            
-            self.log(f"📋 [{port}] Đang lấy thông tin chi tiết...")
-            ser = Serial(port=port, baudrate=115200, timeout=0.1, write_timeout=0.5)
-            time.sleep(0.1)
-            
-            # Lấy thông tin tín hiệu
-            signal_str = get_signal_info(ser, self.log)
-            
-            # Lấy số điện thoại và số dư từ USSD
-            phone_balance_info = get_phone_and_balance(ser, self.log)
-            
-            phone_number = phone_balance_info.get("phone_number", "Không xác định")
-            balance = phone_balance_info.get("balance", "Không xác định")
-            
-            self.log(f"📊 [{port}] Thông tin: {phone_number} - {balance} - {signal_str}")
-            
-            ser.close()
-            
-            return {
-                "signal": signal_str,
-                "phone_number": phone_number,
-                "balance": balance
-            }
-            
-        except Exception as e:
-            self.log(f"❌ Lỗi khi lấy thông tin {port}: {e}")
-            return {
-                "signal": "Lỗi",
-                "phone_number": "Lỗi", 
-                "balance": "Lỗi"
-            }
     
     def load_phone_list(self, file_path: str) -> bool:
         """Tải danh sách số điện thoại từ file"""
         try:
             if not os.path.exists(file_path):
-                self.log(f"❌ File {file_path} không tồn tại")
+                self.log(f"❌ File không tồn tại: {file_path}")
                 return False
             
-            phones = []
             with open(file_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    phone = line.strip()
-                    if phone and phone.isdigit():
-                        phones.append(phone)
+                lines = f.readlines()
             
-            # Thêm vào queue
-            for phone in phones:
-                self.phone_queue.put(phone)
+            self.phone_list = []
+            for line in lines:
+                phone = line.strip()
+                if phone and phone.startswith('0'):
+                    # Chuyển đổi từ 09xxxxxxxx thành +849xxxxxxxx
+                    if len(phone) == 10 and phone.startswith('09'):
+                        phone = '+84' + phone[1:]
+                    elif len(phone) == 11 and phone.startswith('09'):
+                        phone = '+84' + phone[1:]
+                    self.phone_list.append(phone)
             
-            self.log(f"✅ Đã tải {len(phones)} số điện thoại từ {file_path}")
+            self.log(f"📋 Đã tải {len(self.phone_list)} số điện thoại từ file")
             return True
             
         except Exception as e:
             self.log(f"❌ Lỗi khi tải file: {e}")
             return False
     
-    def initialize_gsm_devices(self, gsm_ports: List[Dict]) -> bool:
-        """Khởi tạo các thiết bị GSM"""
-        self.log("🔧 Khởi tạo các thiết bị GSM...")
-        
-        for i, gsm_info in enumerate(gsm_ports):
-            port = gsm_info["port"]
-            self.log(f"🔧 [{port}] Đang khởi tạo thiết bị...")
-            try:
-                # Tạo GSM device
-                gsm_device = GSMDevice(port, baudrate=115200)
-                
-                # Kết nối
-                if gsm_device.connect():
-                    self.log(f"🔗 [{port}] Đã kết nối thành công")
-                    # Reset baudrate lên 921600
-                    if self._reset_baudrate(gsm_device):
-                        self.gsm_devices[port] = gsm_device
-                        self.log(f"✅ [{port}] Khởi tạo thành công với baudrate 921600")
-                    else:
-                        self.log(f"❌ [{port}] Không thể reset baudrate, bỏ qua thiết bị")
-                        gsm_device.disconnect()
-                else:
-                    self.log(f"❌ [{port}] Không thể kết nối đến cổng")
-                    
-            except Exception as e:
-                self.log(f"❌ [{port}] Lỗi khi khởi tạo: {e}")
-        
-        self.log(f"🎯 Khởi tạo thành công {len(self.gsm_devices)} thiết bị GSM")
-        return len(self.gsm_devices) > 0
-    
-    def _reset_baudrate(self, gsm_device: GSMDevice) -> bool:
-        """Reset baudrate từ 115200 lên 921600"""
-        try:
-            # Gửi lệnh reset baudrate
-            response = gsm_device.send_command("AT+IPR=921600", wait_time=2.0)
-            if "OK" in response:
-                response = gsm_device.send_command("AT&W", wait_time=2.0)
-                if "OK" in response:
-                    gsm_device.disconnect()
-                    time.sleep(1)
-                    
-                    # Kết nối lại với baudrate mới
-                    gsm_device.baudrate = 921600
-                    return gsm_device.connect()
+    def distribute_phone_numbers(self):
+        """Phân phối số điện thoại cho các GSM instances"""
+        if not self.phone_list:
+            self.log("❌ Không có danh sách số điện thoại")
             return False
+        
+        if not self.gsm_instances:
+            self.log("❌ Không có GSM instances")
+            return False
+        
+        # Chia đều số điện thoại cho các instances
+        instances = list(self.gsm_instances.values())
+        phones_per_instance = len(self.phone_list) // len(instances)
+        remainder = len(self.phone_list) % len(instances)
+        
+        start_idx = 0
+        for i, instance in enumerate(instances):
+            # Tính số lượng số cho instance này
+            count = phones_per_instance
+            if i < remainder:  # Phân phối số dư cho các instance đầu
+                count += 1
             
-        except Exception as e:
-            self.log(f"❌ Lỗi khi reset baudrate: {e}")
-            return False
+            # Lấy danh sách số cho instance này
+            end_idx = start_idx + count
+            instance_phones = self.phone_list[start_idx:end_idx]
+            
+            # Thiết lập danh sách số cho instance
+            instance.set_phone_queue(instance_phones)
+            
+            self.log(f"📋 [{instance.port}] Nhận {len(instance_phones)} số điện thoại")
+            start_idx = end_idx
+        
+        self.log(f"✅ Đã phân phối {len(self.phone_list)} số điện thoại cho {len(instances)} instances")
+        return True
     
     def start_processing(self):
-        """Bắt đầu xử lý đa luồng"""
+        """Bắt đầu xử lý trên tất cả GSM instances"""
+        if not self.gsm_instances:
+            self.log("❌ Không có GSM instances để xử lý")
+            return False
+        
         if self.is_running:
-            self.log("⚠️ Hệ thống đang chạy")
-            return
+            self.log("⚠️ Đang xử lý rồi")
+            return False
         
-        if not self.gsm_devices:
-            self.log("❌ Không có thiết bị GSM nào được khởi tạo")
-            return
+        # Phân phối số điện thoại
+        if not self.distribute_phone_numbers():
+            return False
         
-        if self.phone_queue.empty():
-            self.log("❌ Không có số điện thoại nào để gọi")
-            return
+        # Xóa kết quả cũ
+        self.clear_results()
         
+        # Bắt đầu xử lý trên tất cả instances
         self.is_running = True
         self.is_stopping = False
         
-        self.log("🚀 Bắt đầu xử lý đa luồng...")
+        self.log("🚀 Bắt đầu xử lý trên tất cả GSM instances...")
+        self.log("ℹ️ Các instances đã ở baudrate 921600, sẵn sàng gọi và ghi âm")
         
-        # Tạo thread cho mỗi GSM device
-        for port, gsm_device in self.gsm_devices.items():
-            thread = threading.Thread(
-                target=self._process_calls_worker,
-                args=(port, gsm_device),
-                daemon=True
-            )
-            thread.start()
-            self.call_threads.append(thread)
+        # Khởi động tất cả instances
+        for instance in self.gsm_instances.values():
+            instance.start_processing()
         
-        self.log(f"🎯 Đã khởi động {len(self.call_threads)} luồng xử lý")
-    
-    def _process_calls_worker(self, port: str, gsm_device: GSMDevice):
-        """Worker thread xử lý cuộc gọi cho một GSM device"""
-        self.log(f"🔄 Luồng {port} bắt đầu hoạt động")
-        
-        while self.is_running and not self.is_stopping:
-            try:
-                # Lấy số điện thoại từ queue (blocking với timeout)
-                try:
-                    phone = self.phone_queue.get(timeout=1)
-                except queue.Empty:
-                    continue
-                
-                if phone is None:  # Signal để dừng
-                    break
-                
-                # Xử lý cuộc gọi
-                result = self._process_single_call(port, gsm_device, phone)
-                
-                # Lưu kết quả
-                self._save_result(result)
-                
-                # Mark task done
-                self.phone_queue.task_done()
-                
-                # Nghỉ giữa các cuộc gọi
-                time.sleep(2)
-                
-            except Exception as e:
-                self.log(f"❌ Lỗi trong luồng {port}: {e}")
-                time.sleep(5)  # Nghỉ lâu hơn khi có lỗi
-        
-        self.log(f"🏁 Luồng {port} kết thúc")
-    
-    def _process_single_call(self, port: str, gsm_device: GSMDevice, phone: str) -> Dict:
-        """Xử lý một cuộc gọi đơn lẻ"""
-        self.log(f"📞 [{port}] Gọi tới {phone}")
-        
-        call_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        local_filename = f"{phone}_{call_timestamp}.amr"
-        
-        try:
-            # 1. Gọi điện
-            call_response = gsm_device.send_command(f"ATD{phone};", wait_time=3.0)
-            if "ERROR" in call_response:
-                return {
-                    "port": port,
-                    "phone": phone,
-                    "status": "can_not_connect",
-                    "timestamp": call_timestamp,
-                    "file": None,
-                    "transcription": None,
-                    "error": "Không thể gọi điện"
-                }
-            
-            time.sleep(1.5)  # Đợi cuộc gọi được thiết lập
-            
-            # 2. Xóa file cũ nếu có
-            gsm_device.send_command('AT+QFDEL="record.amr"', wait_time=1.0)
-            
-            # 3. Bắt đầu ghi âm
-            record_response = gsm_device.send_command('AT+QAUDRD=1,"record.amr",13,1', wait_time=3.0)
-            if "ERROR" in record_response:
-                gsm_device.send_command("ATH", wait_time=1.0)  # Ngắt cuộc gọi
-                return {
-                    "port": port,
-                    "phone": phone,
-                    "status": "can_not_connect",
-                    "timestamp": call_timestamp,
-                    "file": None,
-                    "transcription": None,
-                    "error": "Không thể ghi âm"
-                }
-            
-            # 4. Ghi âm 15 giây và check CLCC
-            start_time = time.time()
-            picked_up = False
-            
-            while time.time() - start_time < 15:
-                # Check CLCC để xem có nhấc máy không
-                clcc_response = gsm_device.send_command("AT+CLCC", wait_time=0.5)
-                if "+COLP" in clcc_response or "CONNECT" in clcc_response:
-                    picked_up = True
-                    self.log(f"📞 [{port}] {phone} đã nhấc máy - dừng ghi âm")
-                    break
-                
-                time.sleep(0.5)  # Check mỗi 0.5 giây
-            
-            # 5. Dừng ghi âm
-            gsm_device.send_command('AT+QAUDRD=0,"record.amr",13,1', wait_time=2.0)
-            time.sleep(0.5)  # Đợi module lưu file
-            
-            # 6. Ngắt cuộc gọi
-            gsm_device.send_command("ATH", wait_time=2.0)
-            
-            # 7. Nếu đã nhấc máy, không cần phân tích audio
-            if picked_up:
-                return {
-                    "port": port,
-                    "phone": phone,
-                    "status": "hoạt động",
-                    "timestamp": call_timestamp,
-                    "file": None,
-                    "transcription": "Người nghe đã nhấc máy",
-                    "error": None
-                }
-            
-            # 8. Tải file audio về
-            local_path = os.path.join(os.path.dirname(__file__), local_filename)
-            if self._download_audio_file(gsm_device, "record.amr", local_path):
-                
-                # 9. Speech-to-text và phân loại
-                transcription, classification = self._analyze_audio(local_path)
-                
-                return {
-                    "port": port,
-                    "phone": phone,
-                    "status": classification,
-                    "timestamp": call_timestamp,
-                    "file": local_filename,
-                    "transcription": transcription,
-                    "error": None
-                }
-            else:
-                return {
-                    "port": port,
-                    "phone": phone,
-                    "status": "can_not_connect",
-                    "timestamp": call_timestamp,
-                    "file": None,
-                    "transcription": None,
-                    "error": "Không thể tải file audio"
-                }
-                
-        except Exception as e:
-            self.log(f"❌ Lỗi khi xử lý cuộc gọi {phone} trên {port}: {e}")
-            return {
-                "port": port,
-                "phone": phone,
-                "status": "can_not_connect",
-                "timestamp": call_timestamp,
-                "file": None,
-                "transcription": None,
-                "error": str(e)
-            }
-    
-    def _download_audio_file(self, gsm_device: GSMDevice, remote_filename: str, local_path: str) -> bool:
-        """Tải file audio từ GSM về máy tính"""
-        try:
-            # Import từ call_and_record
-            from call_and_record import download_file_via_qfread
-            
-            return download_file_via_qfread(gsm_device.serial_connection, remote_filename, local_path)
-            
-        except Exception as e:
-            self.log(f"❌ Lỗi khi tải file audio: {e}")
-            return False
-    
-    def _analyze_audio(self, audio_path: str) -> Tuple[str, str]:
-        """Phân tích audio: speech-to-text và phân loại"""
-        try:
-            # Convert AMR to WAV
-            temp_wav = "temp.wav"
-            convert_to_wav(audio_path, temp_wav)
-            
-            # Speech-to-text
-            transcription = transcribe_wav2vec2(temp_wav)
-            
-            # Phân loại dựa trên từ khóa
-            classification_index = keyword_in_text(transcription)
-            classification = labels[classification_index]
-            
-            # Cleanup temp file
-            if os.path.exists(temp_wav):
-                os.remove(temp_wav)
-            
-            return transcription, classification
-            
-        except Exception as e:
-            self.log(f"❌ Lỗi khi phân tích audio: {e}")
-            return "", "mute"
-    
-    def _save_result(self, result: Dict):
-        """Lưu kết quả vào dictionary"""
-        status = result["status"]
-        if status in self.results:
-            self.results[status].append(result)
-        else:
-            # Nếu không tìm thấy category, thêm vào "mute"
-            self.results["mute"].append(result)
-        
-        self.log(f"📊 [{result['port']}] {result['phone']} → {status}")
+        return True
     
     def stop_processing(self):
-        """Dừng xử lý"""
+        """Dừng xử lý trên tất cả GSM instances"""
         if not self.is_running:
             return
         
-        self.log("🛑 Đang dừng hệ thống...")
+        self.log("🛑 Đang dừng xử lý...")
         self.is_stopping = True
         
-        # Đợi tất cả thread kết thúc
-        for thread in self.call_threads:
-            thread.join(timeout=5)
+        # Dừng tất cả instances
+        for instance in self.gsm_instances.values():
+            instance.stop_processing()
         
-        self.call_threads.clear()
         self.is_running = False
-        self.is_stopping = False
-        
-        self.log("✅ Đã dừng hệ thống")
+        self.log("✅ Đã dừng xử lý")
     
-    def get_results(self) -> Dict[str, List[Dict]]:
-        """Lấy kết quả"""
-        return self.results
+    def collect_results(self):
+        """Thu thập kết quả từ tất cả GSM instances"""
+        self.log("📊 Đang thu thập kết quả...")
+        
+        # Xóa kết quả cũ
+        self.clear_results()
+        
+        # Thu thập kết quả từ tất cả instances
+        total_results = 0
+        processed_phones = set()  # Tập hợp các số đã được xử lý
+        
+        for instance in self.gsm_instances.values():
+            instance_results = instance.get_results()
+            total_results += len(instance_results)
+            
+            # Phân loại kết quả
+            for result in instance_results:
+                category = result.get("result", "incorrect")
+                phone_number = result.get("phone_number", "")
+                processed_phones.add(phone_number)
+                
+                if category in self.results:
+                    self.results[category].append(result)
+                else:
+                    self.results["lỗi"].append(result)
+        
+        # Thêm các số chưa được xử lý vào cột lỗi
+        if self.phone_list:
+            for phone in self.phone_list:
+                if phone not in processed_phones:
+                    self.results["lỗi"].append({
+                        "phone_number": phone,
+                        "result": "lỗi",
+                        "reason": "Chưa được xử lý"
+                    })
+                    self.log(f"⚠️ Số {phone} chưa được xử lý")
+        
+        total_with_unprocessed = total_results + len(self.results["lỗi"])
+        self.log(f"📊 Đã thu thập {total_results} kết quả + {len(self.results['lỗi'])} số chưa xử lý = {total_with_unprocessed} tổng cộng")
+        
+        # Log thống kê
+        for category, results in self.results.items():
+            if results:
+                self.log(f"📈 {category}: {len(results)} kết quả")
+    
+    def get_processing_status(self) -> Dict:
+        """Lấy trạng thái xử lý của tất cả instances"""
+        status = {
+            "is_running": self.is_running,
+            "total_instances": len(self.gsm_instances),
+            "active_instances": 0,
+            "total_calls": 0,
+            "total_results": 0,
+            "instances": {}
+        }
+        
+        for port, instance in self.gsm_instances.items():
+            instance_status = instance.get_status()
+            status["instances"][port] = instance_status
+            
+            if instance_status["status"] in ["calling", "idle"]:
+                status["active_instances"] += 1
+            
+            status["total_calls"] += instance_status["call_count"]
+            status["total_results"] += instance_status["results_count"]
+        
+        return status
     
     def clear_results(self):
-        """Xóa kết quả"""
-        for key in self.results:
-            self.results[key].clear()
+        """Xóa tất cả kết quả"""
+        for category in self.results:
+            self.results[category] = []
+        
+        # Xóa kết quả trong tất cả instances
+        for instance in self.gsm_instances.values():
+            instance.results = []
     
     def export_results(self, output_path: str = None) -> bool:
         """Xuất kết quả ra file Excel"""
         try:
+            # Thu thập kết quả trước khi xuất
+            self.collect_results()
+            
             if output_path is None:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 output_path = f"gsm_results_{timestamp}.xlsx"
             
-            return export_results_to_excel(self.results, output_path)
+            # Tạo dữ liệu xuất
+            export_data = []
+            for category, results in self.results.items():
+                for result in results:
+                    export_data.append({
+                        "Số điện thoại": result.get("phone_number", ""),
+                        "Kết quả": category,
+                        "Lý do": result.get("reason", ""),
+                        "Thời gian": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    })
+            
+            # Xuất ra Excel
+            success = export_results_to_excel(export_data, output_path)
+            
+            if success:
+                self.log(f"✅ Đã xuất kết quả ra file: {output_path}")
+                return True
+            else:
+                self.log("❌ Không thể xuất kết quả")
+                return False
             
         except Exception as e:
             self.log(f"❌ Lỗi khi xuất kết quả: {e}")
             return False
     
-    def disconnect_all(self):
-        """Ngắt kết nối tất cả GSM devices"""
-        for port, gsm_device in self.gsm_devices.items():
+    def reset_all_gsm_instances(self):
+        """Reset tất cả GSM instances về baudrate mặc định"""
+        if not self.gsm_instances:
+            self.log("⚠️ Không có GSM instances để reset")
+            return
+        
+        self.log(f"🔄 Đang reset {len(self.gsm_instances)} GSM instances...")
+        
+        reset_count = 0
+        for port, instance in self.gsm_instances.items():
             try:
-                gsm_device.disconnect()
+                self.log(f"🔄 [{port}] Đang reset instance...")
+                
+                # Reset về baudrate mặc định
+                if instance.reset_baudrate(instance.default_baudrate):
+                    self.log(f"✅ [{port}] Reset thành công")
+                    reset_count += 1
+                else:
+                    self.log(f"❌ [{port}] Reset thất bại")
+                    
+            except Exception as e:
+                self.log(f"❌ [{port}] Lỗi khi reset: {e}")
+        
+        self.log(f"🎯 Đã reset thành công {reset_count}/{len(self.gsm_instances)} instances")
+    
+    def final_reset_all_instances(self):
+        """Reset cuối cùng tất cả GSM instances trước khi thoát"""
+        if not self.gsm_instances:
+            self.log("⚠️ Không có GSM instances để reset cuối cùng")
+            return
+        
+        self.log(f"🔄 Đang reset cuối cùng {len(self.gsm_instances)} GSM instances...")
+        
+        reset_count = 0
+        for port, instance in self.gsm_instances.items():
+            try:
+                self.log(f"🔄 [{port}] Đang reset cuối cùng...")
+                
+                # Gửi lệnh AT+CFUN=1,1 và đóng kết nối
+                if instance.final_reset_and_close():
+                    self.log(f"✅ [{port}] Reset cuối cùng thành công")
+                    reset_count += 1
+                else:
+                    self.log(f"❌ [{port}] Reset cuối cùng thất bại")
+                    
+            except Exception as e:
+                self.log(f"❌ [{port}] Lỗi khi reset cuối cùng: {e}")
+        
+        self.log(f"🎯 Đã reset cuối cùng thành công {reset_count}/{len(self.gsm_instances)} instances")
+    
+    def disconnect_all(self):
+        """Ngắt kết nối tất cả GSM instances"""
+        for port, instance in self.gsm_instances.items():
+            try:
+                instance.disconnect()
                 self.log(f"🔌 Đã ngắt kết nối {port}")
             except Exception as e:
                 self.log(f"❌ Lỗi khi ngắt kết nối {port}: {e}")
         
-        self.gsm_devices.clear()
+        self.gsm_instances.clear()
+    
+    def get_gsm_instances_info(self) -> List[Dict]:
+        """Lấy thông tin tất cả GSM instances cho GUI"""
+        instances_info = []
+        for port, instance in self.gsm_instances.items():
+            info = instance.get_status()
+            instances_info.append({
+                "port": port,
+                "signal": info["signal"],
+                "network_operator": info["network_operator"],
+                "phone_number": info["phone_number"],
+                "balance": info["balance"],
+                "status": info["status"],
+                "call_count": info["call_count"],
+                "queue_remaining": info["queue_remaining"]
+            })
+        return instances_info
