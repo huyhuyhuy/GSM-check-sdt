@@ -6,3 +6,7 @@ pyaudio>=0.2.11
 librosa>=0.10.0
 fastdtw>=0.3.4
 pydub>=0.25.1
+pandas>=1.5.0
+torch>=1.13.0
+transformers>=4.21.0
+soundfile>=0.10.0

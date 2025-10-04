@@ -4,6 +4,7 @@ import threading
 import time
 import json
 import os
+from controller import GSMController
 
 class AudioClassificationGUI:
     def __init__(self, root):
@@ -20,7 +21,23 @@ class AudioClassificationGUI:
     
     def set_app_icon(self):
         """Thiết lập icon cho ứng dụng"""
-        self.root.iconbitmap("icon.ico")
+        try:
+            # Thử load icon từ đường dẫn tương đối
+            icon_path = "icon.ico"
+            if os.path.exists(icon_path):
+                self.root.iconbitmap(icon_path)
+            else:
+                # Nếu không tìm thấy, thử từ thư mục của script
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                icon_path = os.path.join(script_dir, "icon.ico")
+                if os.path.exists(icon_path):
+                    self.root.iconbitmap(icon_path)
+                else:
+                    # Nếu vẫn không tìm thấy, bỏ qua (không crash)
+                    print("⚠️ Không tìm thấy file icon.ico - bỏ qua thiết lập icon")
+        except Exception as e:
+            # Bỏ qua lỗi icon để không crash ứng dụng
+            print(f"⚠️ Không thể thiết lập icon: {e}")
         
     def setup_styles(self):
         """Thiết lập style cho giao diện"""
@@ -163,67 +180,137 @@ class AudioClassificationGUI:
         self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         # Khởi tạo
+        self.controller = GSMController()
+        self.controller.set_log_callback(self.add_log)
+        self.phone_file_path = None
         self.initialize_system()
     
     def initialize_system(self):
         """Khởi tạo hệ thống"""
         def init_thread():
             self.add_log("Đang khởi tạo hệ thống...")
-            # Simulate initialization
-            time.sleep(1)
-            self.add_log("Khởi tạo hệ thống thành công!")
-            # Thêm fake data vào Treeview
-            self.add_fake_data()
+            
+            # Quét các cổng GSM
+            self.add_log("🔍 Quét các cổng GSM...")
+            gsm_ports = self.controller.scan_gsm_ports()
+            
+            if gsm_ports:
+                # Hiển thị kết quả quét
+                self.display_gsm_ports(gsm_ports)
+                self.add_log(f"✅ Tìm thấy {len(gsm_ports)} cổng GSM")
+                
+                # Khởi tạo các thiết bị GSM
+                if self.controller.initialize_gsm_devices(gsm_ports):
+                    self.add_log("✅ Khởi tạo thiết bị GSM thành công!")
+                else:
+                    self.add_log("❌ Không thể khởi tạo thiết bị GSM")
+            else:
+                self.add_log("⚠️ Không tìm thấy cổng GSM nào")
+                # Hiển thị thông báo
+                self.display_no_gsm_found()
         
         threading.Thread(target=init_thread, daemon=True).start()
     
-    def add_fake_data(self):
-        """Thêm dữ liệu giả vào Treeview"""
-        fake_data = [
-            ("1", "COM37", "Active", "0987654321", "50,000 VND"),
-            ("2", "COM38", "Active", "0987654322", "45,000 VND"),
-            ("3", "COM39", "Inactive", "0987654323", "0 VND"),
-            ("4", "COM40", "Active", "0987654324", "75,000 VND"),
-            ("5", "COM41", "Active", "0987654325", "30,000 VND"),
-            ("6", "COM42", "Inactive", "0987654326", "0 VND"),
-            ("7", "COM43", "Active", "0987654327", "60,000 VND"),
-            ("8", "COM44", "Active", "0987654328", "25,000 VND"),
-            ("9", "COM45", "Active", "0987654329", "80,000 VND"),
-            ("10", "COM46", "Inactive", "0987654330", "0 VND"),
-            ("11", "COM47", "Active", "0987654321", "50,000 VND"),
-            ("12", "COM48", "Active", "0987654322", "45,000 VND"),
-            ("13", "COM49", "Inactive", "0987654323", "0 VND"),
-            ("14", "COM50", "Active", "0987654324", "75,000 VND"),
-            ("15", "COM51", "Active", "0987654325", "30,000 VND"),
-            ("16", "COM52", "Inactive", "0987654326", "0 VND"),
-            ("17", "COM53", "Active", "0987654327", "60,000 VND"),
-            ("18", "COM54", "Active", "0987654328", "25,000 VND"),
-            ("19", "COM55", "Active", "0987654329", "80,000 VND"),
-            ("20", "COM56", "Inactive", "0987654330", "0 VND")
-        ]
+    def display_gsm_ports(self, gsm_ports):
+        """Hiển thị danh sách cổng GSM trong Treeview"""
+        # Xóa dữ liệu cũ
+        for item in self.gsm_list.get_children():
+            self.gsm_list.delete(item)
         
-        for i, data in enumerate(fake_data):
+        # Thêm dữ liệu mới
+        for i, gsm_info in enumerate(gsm_ports, 1):
+            data = (
+                str(i),
+                gsm_info["port"],
+                gsm_info["status"],
+                gsm_info["phone_number"],
+                gsm_info["balance"]
+            )
+            
             # Xác định tag dựa trên số thứ tự (0-based)
             tag = "even" if i % 2 == 0 else "odd"
             self.gsm_list.insert("", "end", values=data, tags=(tag,))
+    
+    def display_no_gsm_found(self):
+        """Hiển thị thông báo khi không tìm thấy GSM"""
+        # Xóa dữ liệu cũ
+        for item in self.gsm_list.get_children():
+            self.gsm_list.delete(item)
         
-        self.add_log(f"Đã thêm {len(fake_data)} dòng dữ liệu GSM vào bảng")
+        # Thêm thông báo
+        self.gsm_list.insert("", "end", values=(
+            "1", "Không tìm thấy", "N/A", "N/A", "N/A"
+        ))
     
     def select_file(self):
         """Chọn file danh sách số điện thoại"""
-       
+        file_path = filedialog.askopenfilename(
+            title="Chọn file danh sách số điện thoại",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        
+        if file_path:
+            self.phone_file_path = file_path
+            self.add_log(f"📁 Đã chọn file: {os.path.basename(file_path)}")
+            
+            # Tải danh sách số điện thoại
+            if self.controller.load_phone_list(file_path):
+                self.add_log("✅ Đã tải danh sách số điện thoại thành công!")
+            else:
+                self.add_log("❌ Không thể tải danh sách số điện thoại")
+                messagebox.showerror("Lỗi", "Không thể tải file danh sách số điện thoại")
     
     def start_processing(self):
         """Bắt đầu quá trình xử lý"""
+        if not self.phone_file_path:
+            messagebox.showwarning("Cảnh báo", "Vui lòng chọn file danh sách số điện thoại trước!")
+            return
+        
+        if not self.controller.gsm_devices:
+            messagebox.showerror("Lỗi", "Không có thiết bị GSM nào được kết nối!")
+            return
+        
+        # Xóa kết quả cũ
+        self.controller.clear_results()
+        
+        # Cập nhật trạng thái nút
+        self.start_btn.config(state='disabled')
+        self.stop_btn.config(state='normal')
+        
+        # Bắt đầu xử lý
+        self.controller.start_processing()
+        self.add_log("🚀 Bắt đầu xử lý số điện thoại...")
     
     def stop_processing(self):
         """Dừng quá trình xử lý"""
-    
-    def _finalize_completion(self):
-        """Hoàn thành quá trình xử lý"""
+        self.controller.stop_processing()
+        
+        # Cập nhật trạng thái nút
+        self.start_btn.config(state='normal')
+        self.stop_btn.config(state='disabled')
+        
+        self.add_log("🛑 Đã dừng xử lý")
     
     def export_results(self):
         """Xuất kết quả ra file Excel"""
+        if not any(self.controller.results.values()):
+            messagebox.showwarning("Cảnh báo", "Không có kết quả nào để xuất!")
+            return
+        
+        # Chọn nơi lưu file
+        file_path = filedialog.asksaveasfilename(
+            title="Lưu kết quả Excel",
+            defaultextension=".xlsx",
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
+        )
+        
+        if file_path:
+            if self.controller.export_results(file_path):
+                self.add_log(f"✅ Đã xuất kết quả ra: {os.path.basename(file_path)}")
+                messagebox.showinfo("Thành công", f"Đã xuất kết quả ra file:\n{file_path}")
+            else:
+                self.add_log("❌ Không thể xuất kết quả")
+                messagebox.showerror("Lỗi", "Không thể xuất kết quả ra file Excel")
     
     def add_log(self, message: str):
         """Thêm log vào text area"""
@@ -235,6 +322,13 @@ class AudioClassificationGUI:
     
     def on_closing(self):
         """Xử lý khi đóng ứng dụng"""
+        # Dừng xử lý nếu đang chạy
+        if self.controller.is_running:
+            self.controller.stop_processing()
+        
+        # Ngắt kết nối tất cả GSM devices
+        self.controller.disconnect_all()
+        
         self.root.destroy()
 
 def main():

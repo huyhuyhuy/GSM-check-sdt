@@ -1,5 +1,6 @@
 import serial
 import time
+import logging
 
 class GSMDevice:
     def __init__(self, port: str, baudrate: int = 115200, timeout: int = 5):
@@ -97,7 +98,70 @@ class GSMDevice:
     # gửi lệnh AT tới GSM để check số dư còn lại của sim (AT+CUSD=1,"*101#",15)
     def get_balance(self):
         return self.send_command("AT+CUSD=1,\"*101#\",15")
-
-    # gửi lệnh AT tới GSM để check tình trạng cuộc gọi (AT+CLCC)
-    def get_call_status(self):
-        return self.send_command("AT+CLCC")
+    
+    def check_call_status(self):
+        """Kiểm tra trạng thái cuộc gọi hiện tại"""
+        response = self.send_command("AT+CPAS", wait_time=1.0)
+        if "4" in response:  # 4 = call in progress
+            return True
+        elif "0" in response:  # 0 = ready
+            return False
+        else:
+            return False
+    
+    def check_picked_up(self):
+        """Kiểm tra xem có người nhấc máy không bằng AT+CLCC"""
+        response = self.send_command("AT+CLCC", wait_time=0.5)
+        # Tìm các dấu hiệu người nhấc máy
+        if "+COLP" in response or "CONNECT" in response:
+            return True
+        return False
+    
+    def make_call(self, phone_number: str):
+        """Thực hiện cuộc gọi"""
+        response = self.send_command(f"ATD{phone_number};", wait_time=3.0)
+        return "ERROR" not in response
+    
+    def hang_up(self):
+        """Ngắt cuộc gọi"""
+        response = self.send_command("ATH", wait_time=2.0)
+        return "OK" in response
+    
+    def start_recording(self, filename: str = "record.amr"):
+        """Bắt đầu ghi âm"""
+        response = self.send_command(f'AT+QAUDRD=1,"{filename}",13,1', wait_time=3.0)
+        return "ERROR" not in response
+    
+    def stop_recording(self, filename: str = "record.amr"):
+        """Dừng ghi âm"""
+        response = self.send_command(f'AT+QAUDRD=0,"{filename}",13,1', wait_time=2.0)
+        return "ERROR" not in response
+    
+    def delete_file(self, filename: str):
+        """Xóa file trên module"""
+        response = self.send_command(f'AT+QFDEL="{filename}"', wait_time=1.0)
+        return "OK" in response
+    
+    def get_signal_strength(self):
+        """Lấy thông tin tín hiệu"""
+        response = self.send_command("AT+CSQ", wait_time=1.0)
+        return response
+    
+    def get_network_info(self):
+        """Lấy thông tin mạng"""
+        response = self.send_command("AT+COPS?", wait_time=2.0)
+        return response
+    
+    def get_registration_status(self):
+        """Kiểm tra trạng thái đăng ký mạng"""
+        response = self.send_command("AT+CREG?", wait_time=2.0)
+        return response
+    
+    def reset_module(self):
+        """Reset module"""
+        try:
+            response = self.send_command("AT+CFUN=1,1", wait_time=5.0)
+            return "OK" in response
+        except Exception as e:
+            logging.error(f"Lỗi khi reset module: {e}")
+            return False

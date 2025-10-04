@@ -1,7 +1,3 @@
-# pip install vosk pydub torch transformers datasets soundfile librosa
-# pip install git+https://github.com/openai/whisper.git
-
-
 import os
 import sys
 import subprocess
@@ -12,8 +8,6 @@ import torch
 import librosa
 import soundfile as sf
 from pydub import AudioSegment
-
-from vosk import Model, KaldiRecognizer
 from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 
 
