@@ -109,8 +109,11 @@ def read_all(ser, wait_time):
     except Exception:
         return str(collected)
 
-def send_at_and_read(ser, cmd, wait=REPLY_WAIT):
+def send_at_and_read(ser, cmd, wait=REPLY_WAIT, log_callback=None):
     """Gửi một lệnh AT (chuỗi đã kèm CR nếu cần) và đọc trả lời"""
+    if log_callback:
+        log_callback(f"📤 Gửi lệnh: {cmd}")
+    
     if not cmd.endswith("\r"):
         cmd = cmd + "\r"
     try:
@@ -118,9 +121,16 @@ def send_at_and_read(ser, cmd, wait=REPLY_WAIT):
         ser.reset_output_buffer()
     except Exception:
         pass
+    
     ser.write(cmd.encode(errors="ignore"))
     ser.flush()
-    return read_all(ser, wait)
+    
+    # Đọc response với thời gian chờ
+    response = read_all(ser, wait)
+    if log_callback:
+        log_callback(f"📥 Response: {response[:50]}...")
+    
+    return response
 
 def probe_port_simple(port):
     """Mở port ở BAUD, gửi AT, nếu reply chứa OK -> valid"""
@@ -149,13 +159,12 @@ def probe_port_simple(port):
 
 # ---------------- khi xác định được cổng COM GSM thì sử dụng các hàm sau để lấy thêm thông tin ----------------
 
-def get_signal_info(ser):
+def get_signal_info(ser, log_callback=None):
     """
     Gửi AT+CSQ và parse +CSQ: <rssi>,<ber>
-    rssi: 0..31, 99 = not known or not detectable
-    dBm ≈ -113 + 2*rssi  (khoảng)
+    Trả về format "25/31" cho GUI
     """
-    resp = send_at_and_read(ser, "AT+CSQ", wait=REPLY_WAIT)
+    resp = send_at_and_read(ser, "AT+CSQ", wait=REPLY_WAIT, log_callback=log_callback)
     # tìm +CSQ: line
     for line in resp.splitlines():
         line = line.strip()
@@ -164,15 +173,16 @@ def get_signal_info(ser):
             try:
                 parts = line.split(":")[1].strip().split(",")
                 rssi = int(parts[0])
-                ber = int(parts[1]) if len(parts) > 1 else None
                 if rssi == 99:
-                    return {"raw": line, "rssi": None, "ber": ber, "dbm": None, "note": "unknown"}
-                dbm = -113 + 2 * rssi
-                return {"raw": line, "rssi": rssi, "ber": ber, "dbm": dbm}
+                    return "Không xác định"
+                signal_str = f"{rssi}/31"
+                if log_callback:
+                    log_callback(f"📶 Tín hiệu sóng: {signal_str}")
+                return signal_str
             except Exception:
-                return {"raw": line, "parse_error": True}
-    # fallback: trả về toàn bộ response
-    return {"raw": resp}
+                return "Lỗi đọc"
+    # fallback: trả về không xác định
+    return "Không xác định"
 
 def get_phone_number(ser):
     """
@@ -220,52 +230,91 @@ def get_phone_number(ser):
     # nếu không có +CNUM, trả về response để debug
     return {"raw": resp, "number": None}
 
-def try_ussd_for_balance(ser, codes=USSD_CODES):
+def get_phone_and_balance(ser, log_callback=None):
     """
-    Thử các mã USSD trong danh sách; trả về nội dung trả về đầu tiên của +CUSD.
-    Cách gửi: AT+CUSD=1,"<code>",15
-    Lưu ý: sau lệnh này modem sẽ trả +CUSD: ... (cần đợi lâu hơn)
+    Gửi AT+CUSD=1,"*101#",15 và parse thông tin số điện thoại + số dư
+    Trả về dict với phone_number và balance
     """
-    # Bật chế độ USSD result format (1) nếu cần
-    # Một số modem yêu cầu AT+CUSD=1 để kích hoạt
-    send_at_and_read(ser, "AT+CUSD=1", wait=0.6)
-
-    for code in codes:
-        # gửi và chờ lâu hơn vì USSD có thể mất thời gian
-        cmd = f'AT+CUSD=1,"{code}",15'
-        resp = send_at_and_read(ser, cmd, wait=LONG_WAIT)
-        # đôi khi modem trả ngay "OK" và sau vài giây trả +CUSD,...
-        # chờ thêm 1-2s để xem có +CUSD xuất hiện không
-        more = read_all(ser, 2.0)
-        if more:
-            resp = (resp + "\n" + more).strip()
-
-        # tìm +CUSD:
-        for line in resp.splitlines():
-            l = line.strip()
-            if l.upper().startswith("+CUSD"):
-                # +CUSD: 0,"<text>",15
-                # extract quoted text
-                # nếu trả về chuỗi hex (kiểu "00..."), modem có thể trả UCS2 -> cần decode; 
-                # ở đây ta lấy raw text trong quotes nếu có, hoặc toàn dòng
-                try:
-                    # tìm phần trong quotes
-                    start = l.find('"')
-                    end = l.rfind('"')
-                    if start != -1 and end != -1 and end > start:
-                        content = l[start+1:end]
+    if log_callback:
+        log_callback("🔍 Bắt đầu gửi lệnh USSD...")
+    
+    # Gửi lệnh USSD
+    cmd = 'AT+CUSD=1,"*101#",15'
+    resp = send_at_and_read(ser, cmd, wait=3.0, log_callback=log_callback)  # Chờ 3 giây như yêu cầu
+    
+    if log_callback:
+        log_callback(f"📡 USSD Response: {resp[:100]}...")
+    
+    # Parse response để lấy số điện thoại và số dư
+    phone_number = "Không xác định"
+    balance = "Không xác định"
+    
+    # Tìm +CUSD line
+    found_cusd = False
+    for line in resp.splitlines():
+        line = line.strip()
+        
+        if line.upper().startswith("+CUSD"):
+            found_cusd = True
+            if log_callback:
+                log_callback(f"✅ Tìm thấy +CUSD response")
+            
+            # +CUSD: 0,"+84996800685. TTGTEL. TKC 5014 d, TK no 0VND, HSD: 00:00 17-11-2025. Quy khach se nhan duoc thong tin TK Khuyen mai qua SMS.",15
+            try:
+                # Tìm phần trong quotes
+                start = line.find('"')
+                end = line.rfind('"')
+                
+                if start != -1 and end != -1 and end > start:
+                    content = line[start+1:end]
+                    
+                    # Parse số điện thoại - tìm pattern +84xxxxxxxxx
+                    import re
+                    phone_match = re.search(r'\+84\d{9,10}', content)
+                    if phone_match:
+                        phone_number = phone_match.group(0)
+                        if log_callback:
+                            log_callback(f"📞 Tìm thấy số điện thoại: {phone_number}")
                     else:
-                        # fallback: lấy phần sau : và loại status
-                        parts = l.split(":",1)
-                        content = parts[1].strip() if len(parts) > 1 else l
-                    return {"ussd_code": code, "raw": l, "content": content}
-                except Exception:
-                    return {"ussd_code": code, "raw": l, "content": None}
-        # Nếu không thấy +CUSD nhưng có text khác (tạm chấp nhận)
-        if resp and "OK" not in resp.upper():
-            # treat as potential result
-            return {"ussd_code": code, "raw": resp, "content": resp}
-    return {"ussd_code": None, "raw": None, "content": None}
+                        if log_callback:
+                            log_callback(f"⚠️ Không tìm thấy số điện thoại trong response")
+                    
+                    # Parse số dư - tìm pattern "TKC xxxx d"
+                    balance_match = re.search(r'TKC\s+(\d+)\s+d', content)
+                    if balance_match:
+                        balance_amount = balance_match.group(1)
+                        balance = f"{balance_amount} VND"
+                        if log_callback:
+                            log_callback(f"💰 Tìm thấy số dư: {balance}")
+                    else:
+                        if log_callback:
+                            log_callback(f"⚠️ Không tìm thấy số dư trong response")
+                    
+                    return {
+                        "phone_number": phone_number,
+                        "balance": balance,
+                        "raw_content": content
+                    }
+                else:
+                    if log_callback:
+                        log_callback(f"❌ Không tìm thấy quotes trong +CUSD response")
+            except Exception as e:
+                if log_callback:
+                    log_callback(f"❌ Lỗi parse USSD response: {e}")
+                pass
+    
+    if not found_cusd:
+        if log_callback:
+            log_callback(f"❌ Không tìm thấy +CUSD trong response")
+    
+    if log_callback:
+        log_callback(f"📊 Kết quả: {phone_number} - {balance}")
+    
+    return {
+        "phone_number": phone_number,
+        "balance": balance,
+        "raw_content": resp
+    }
 
 def main():
     ports = list_com_ports()
@@ -301,15 +350,12 @@ def main():
                 
                 # Lay thong tin tin hieu
                 signal_info = get_signal_info(ser)
-                print(f"Tin hieu: {signal_info}")
+                print(f"Tín hiệu sóng: {signal_info}")
                 
-                # Lay so dien thoai
-                phone_info = get_phone_number(ser)
-                print(f"So dien thoai: {phone_info}")
-                
-                # Thu USSD de lay so du
-                balance_info = try_ussd_for_balance(ser)
-                print(f"So du: {balance_info}")
+                # Lay so dien thoai va so du tu USSD
+                phone_balance_info = get_phone_and_balance(ser)
+                print(f"Số điện thoại: {phone_balance_info['phone_number']}")
+                print(f"Số dư: {phone_balance_info['balance']}")
                 
                 ser.close()
                 

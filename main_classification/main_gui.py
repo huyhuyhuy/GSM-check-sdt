@@ -151,7 +151,7 @@ class AudioClassificationGUI:
         # Thiết lập header với style đẹp hơn
         self.gsm_list.heading("stt", text="STT", anchor="center")
         self.gsm_list.heading("COM", text="Cổng GSM", anchor="center")
-        self.gsm_list.heading("sim status", text="Trạng Thái SIM", anchor="center")
+        self.gsm_list.heading("sim status", text="Tín Hiệu Sóng", anchor="center")
         self.gsm_list.heading("phone number", text="Số Điện Thoại", anchor="center")
         self.gsm_list.heading("remaining balance", text="Số Dư Còn Lại", anchor="center")
         
@@ -222,7 +222,7 @@ class AudioClassificationGUI:
             data = (
                 str(i),
                 gsm_info["port"],
-                gsm_info["status"],
+                gsm_info["signal"],  # Thay vì status, dùng signal
                 gsm_info["phone_number"],
                 gsm_info["balance"]
             )

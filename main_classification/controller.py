@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 
 from gsm_manager import GSMDevice
-from detect_gsm_port import probe_port_simple, get_signal_info, get_phone_number, try_ussd_for_balance
+from detect_gsm_port import probe_port_simple, get_signal_info, get_phone_and_balance
 from string_detection import keyword_in_text, labels
 from spk_to_text_wav2 import convert_to_wav, transcribe_wav2vec2
 from export_excel import export_results_to_excel
@@ -85,24 +85,20 @@ class GSMController:
         try:
             from serial import Serial
             
+            self.log(f"📋 [{port}] Đang lấy thông tin chi tiết...")
             ser = Serial(port=port, baudrate=115200, timeout=0.1, write_timeout=0.5)
             time.sleep(0.1)
             
             # Lấy thông tin tín hiệu
-            signal_info = get_signal_info(ser)
-            signal_str = "Không xác định"
-            if "rssi" in signal_info and signal_info["rssi"] is not None:
-                signal_str = f"{signal_info['rssi']}/31 ({signal_info.get('dbm', 'N/A')} dBm)"
+            signal_str = get_signal_info(ser, self.log)
             
-            # Lấy số điện thoại
-            phone_info = get_phone_number(ser)
-            phone_number = phone_info.get("number", "Không xác định")
+            # Lấy số điện thoại và số dư từ USSD
+            phone_balance_info = get_phone_and_balance(ser, self.log)
             
-            # Lấy số dư
-            balance_info = try_ussd_for_balance(ser)
-            balance = "Không xác định"
-            if balance_info.get("content"):
-                balance = balance_info["content"]
+            phone_number = phone_balance_info.get("phone_number", "Không xác định")
+            balance = phone_balance_info.get("balance", "Không xác định")
+            
+            self.log(f"📊 [{port}] Thông tin: {phone_number} - {balance} - {signal_str}")
             
             ser.close()
             
@@ -151,24 +147,26 @@ class GSMController:
         
         for i, gsm_info in enumerate(gsm_ports):
             port = gsm_info["port"]
+            self.log(f"🔧 [{port}] Đang khởi tạo thiết bị...")
             try:
                 # Tạo GSM device
                 gsm_device = GSMDevice(port, baudrate=115200)
                 
                 # Kết nối
                 if gsm_device.connect():
+                    self.log(f"🔗 [{port}] Đã kết nối thành công")
                     # Reset baudrate lên 921600
                     if self._reset_baudrate(gsm_device):
                         self.gsm_devices[port] = gsm_device
-                        self.log(f"✅ Khởi tạo thành công {port}")
+                        self.log(f"✅ [{port}] Khởi tạo thành công với baudrate 921600")
                     else:
-                        self.log(f"❌ Không thể reset baudrate cho {port}")
+                        self.log(f"❌ [{port}] Không thể reset baudrate, bỏ qua thiết bị")
                         gsm_device.disconnect()
                 else:
-                    self.log(f"❌ Không thể kết nối đến {port}")
+                    self.log(f"❌ [{port}] Không thể kết nối đến cổng")
                     
             except Exception as e:
-                self.log(f"❌ Lỗi khi khởi tạo {port}: {e}")
+                self.log(f"❌ [{port}] Lỗi khi khởi tạo: {e}")
         
         self.log(f"🎯 Khởi tạo thành công {len(self.gsm_devices)} thiết bị GSM")
         return len(self.gsm_devices) > 0
