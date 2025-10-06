@@ -14,17 +14,17 @@ def check_pyinstaller():
     """Kiểm tra PyInstaller đã được cài đặt chưa"""
     try:
         import PyInstaller
-        print(f"✅ PyInstaller version: {PyInstaller.__version__}")
+        print(f"[OK] PyInstaller version: {PyInstaller.__version__}")
         return True
     except ImportError:
-        print("❌ PyInstaller chưa được cài đặt")
-        print("🔧 Đang cài đặt PyInstaller...")
+        print("[ERROR] PyInstaller chua duoc cai dat")
+        print("[INFO] Dang cai dat PyInstaller...")
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
-            print("✅ Đã cài đặt PyInstaller thành công")
+            print("[OK] Da cai dat PyInstaller thanh cong")
             return True
         except subprocess.CalledProcessError:
-            print("❌ Không thể cài đặt PyInstaller")
+            print("[ERROR] Khong the cai dat PyInstaller")
             return False
 
 def create_spec_file():
@@ -34,13 +34,13 @@ def create_spec_file():
     datas_list = []
     if os.path.exists('icon.ico'):
         datas_list.append("('icon.ico', '.')")
-        print("✅ Tìm thấy icon.ico - sẽ đóng gói vào exe")
+        print("[OK] Tim thay icon.ico - se dong goi vao exe")
     else:
-        print("⚠️ Không tìm thấy icon.ico - bỏ qua")
+        print("[WARNING] Khong tim thay icon.ico - bo qua")
     
     if os.path.exists('icon.png'):
         datas_list.append("('icon.png', '.')")
-        print("✅ Tìm thấy icon.png - sẽ đóng gói vào exe")
+        print("[OK] Tim thay icon.png - se dong goi vao exe")
     
     datas_str = "[" + ", ".join(datas_list) + "]" if datas_list else "[]"
     
@@ -92,6 +92,15 @@ hiddenimports = [
     'scipy.signal',
     'scipy.io',
     'scipy.io.wavfile',
+    # GSM detection và string detection
+    'detect_gsm_port',
+    'string_detection',
+    'gsm_instance',
+    'controller',
+    'export_excel',
+    # Concurrent processing
+    'concurrent.futures',
+    'concurrent.futures.thread',
 ]
 
 a = Analysis(
@@ -110,6 +119,9 @@ a = Analysis(
     noarchive=False,
 )
 
+# Fix Python DLL issue
+pyi_splash = None
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
@@ -123,7 +135,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,  # Tắt UPX để tránh DLL issues
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,  # Ẩn console window
@@ -137,54 +149,102 @@ exe = EXE(
     with open('GSM_Classification.spec', 'w', encoding='utf-8') as f:
         f.write(spec_content)
     
-    print("✅ Đã tạo file GSM_Classification.spec")
+    print("[OK] Da tao file GSM_Classification.spec")
 
 def build_executable():
     """Build file exe từ spec file"""
-    print("🔨 Bắt đầu build file exe...")
+    print("[INFO] Bat dau build file exe...")
     
     try:
         # Xóa thư mục build và dist cũ nếu có
         if os.path.exists('build'):
             shutil.rmtree('build')
-            print("🗑️ Đã xóa thư mục build cũ")
+            print("[INFO] Da xoa thu muc build cu")
         
         if os.path.exists('dist'):
             shutil.rmtree('dist')
-            print("🗑️ Đã xóa thư mục dist cũ")
+            print("[INFO] Da xoa thu muc dist cu")
         
-        # Chạy PyInstaller
-        cmd = [sys.executable, "-m", "PyInstaller", "--clean", "GSM_Classification.spec"]
-        print(f"🚀 Chạy lệnh: {' '.join(cmd)}")
+        # Thử build với spec file trước
+        try:
+            cmd = [
+                sys.executable, "-m", "PyInstaller", 
+                "--clean",
+                "--onefile",
+                "--noconsole",
+                "--noupx",
+                "GSM_Classification.spec"
+            ]
+            print(f"[INFO] Chay lenh: {' '.join(cmd)}")
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                return check_exe_result()
+            else:
+                print("[WARNING] Build voi spec file that bai, thu cach khac...")
+                print("STDERR:", result.stderr)
+                
+        except Exception as e:
+            print(f"[WARNING] Loi khi build voi spec: {e}")
         
+        # Fallback: Build trực tiếp không dùng spec file
+        print("[INFO] Thu build truc tiep...")
+        cmd = [
+            sys.executable, "-m", "PyInstaller",
+            "--onefile",
+            "--noconsole", 
+            "--noupx",
+            "--name", "GSM_Classification_System",
+            "--hidden-import", "tkinter",
+            "--hidden-import", "tkinter.ttk",
+            "--hidden-import", "serial",
+            "--hidden-import", "transformers",
+            "--hidden-import", "torch",
+            "--hidden-import", "librosa",
+            "--hidden-import", "pydub",
+            "--hidden-import", "string_detection",
+            "--hidden-import", "detect_gsm_port",
+            "--hidden-import", "gsm_instance",
+            "--hidden-import", "controller",
+            "--hidden-import", "export_excel",
+            "main_gui.py"
+        ]
+        
+        if os.path.exists('icon.ico'):
+            cmd.extend(["--icon", "icon.ico"])
+        
+        print(f"[INFO] Chay lenh: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode == 0:
-            print("✅ Build thành công!")
-            
-            # Kiểm tra file exe đã được tạo
-            exe_path = Path("dist/GSM_Classification_System.exe")
-            if exe_path.exists():
-                size_mb = exe_path.stat().st_size / (1024 * 1024)
-                print(f"📁 File exe: {exe_path.absolute()}")
-                print(f"📏 Kích thước: {size_mb:.1f} MB")
-                return True
-            else:
-                print("❌ File exe không được tạo")
-                return False
+            return check_exe_result()
         else:
-            print("❌ Build thất bại!")
+            print("[ERROR] Build that bai!")
             print("STDOUT:", result.stdout)
             print("STDERR:", result.stderr)
             return False
             
     except Exception as e:
-        print(f"❌ Lỗi khi build: {e}")
+        print(f"[ERROR] Loi khi build: {e}")
+        return False
+
+def check_exe_result():
+    """Kiểm tra kết quả build exe"""
+    exe_path = Path("dist/GSM_Classification_System.exe")
+    if exe_path.exists():
+        size_mb = exe_path.stat().st_size / (1024 * 1024)
+        print("[OK] Build thanh cong!")
+        print(f"[INFO] File exe: {exe_path.absolute()}")
+        print(f"[INFO] Kich thuoc: {size_mb:.1f} MB")
+        return True
+    else:
+        print("[ERROR] File exe khong duoc tao")
         return False
 
 def create_portable_package():
     """Tạo package portable với các file cần thiết"""
-    print("📦 Tạo package portable...")
+    print("[INFO] Tao package portable...")
     
     try:
         # Tạo thư mục portable
@@ -198,14 +258,14 @@ def create_portable_package():
         exe_dst = portable_dir / "GSM_Classification_System.exe"
         if exe_src.exists():
             shutil.copy2(exe_src, exe_dst)
-            print(f"✅ Đã copy file exe")
+            print(f"[OK] Da copy file exe")
         
         # Copy README
         readme_src = Path("README.md")
         readme_dst = portable_dir / "README.md"
         if readme_src.exists():
             shutil.copy2(readme_src, readme_dst)
-            print(f"✅ Đã copy README")
+            print(f"[OK] Da copy README")
         
         # Tạo file mẫu danh sách số điện thoại
         sample_file = portable_dir / "sample_phone_list.txt"
@@ -216,7 +276,7 @@ def create_portable_package():
 0987654324
 0987654325
 """)
-        print(f"✅ Đã tạo file mẫu danh sách số điện thoại")
+        print(f"[OK] Da tao file mau danh sach so dien thoai")
         
         # Tạo file hướng dẫn sử dụng
         guide_file = portable_dir / "HUONG_DAN_SU_DUNG.txt"
@@ -253,18 +313,18 @@ def create_portable_package():
 
 Hỗ trợ: Xem file README.md để biết thêm chi tiết
 """)
-        print(f"✅ Đã tạo file hướng dẫn")
+        print(f"[OK] Da tao file huong dan")
         
-        print(f"📁 Package portable: {portable_dir.absolute()}")
+        print(f"[INFO] Package portable: {portable_dir.absolute()}")
         return True
         
     except Exception as e:
-        print(f"❌ Lỗi khi tạo package portable: {e}")
+        print(f"[ERROR] Loi khi tao package portable: {e}")
         return False
 
 def main():
     """Hàm main để build"""
-    print("🚀 GSM Classification System - Build Script")
+    print("GSM Classification System - Build Script")
     print("=" * 50)
     
     # Kiểm tra PyInstaller
@@ -284,11 +344,11 @@ def main():
     
     print("\n" + "=" * 50)
     print("🎉 BUILD THÀNH CÔNG!")
-    print("\n📁 Các file đã tạo:")
+    print("\n[INFO] Cac file da tao:")
     print("  - dist/GSM_Classification_System.exe (File exe chính)")
     print("  - GSM_Classification_Portable/ (Package portable)")
     
-    print("\n🚀 Để sử dụng:")
+    print("\n[INFO] De su dung:")
     print("  1. Copy thư mục GSM_Classification_Portable")
     print("  2. Chạy GSM_Classification_System.exe")
     print("  3. Làm theo hướng dẫn trong HUONG_DAN_SU_DUNG.txt")
@@ -299,13 +359,13 @@ if __name__ == "__main__":
     try:
         success = main()
         if success:
-            print("\n✅ Hoàn thành build thành công!")
+            print("\n[SUCCESS] Hoan thanh build thanh cong!")
         else:
-            print("\n❌ Build thất bại!")
+            print("\n[ERROR] Build that bai!")
             sys.exit(1)
     except KeyboardInterrupt:
-        print("\n⚠️ Build bị hủy bởi người dùng")
+        print("\n[WARNING] Build bi huy boi nguoi dung")
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ Lỗi không mong muốn: {e}")
+        print(f"\n[ERROR] Loi khong mong muon: {e}")
         sys.exit(1)

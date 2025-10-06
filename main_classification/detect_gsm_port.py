@@ -4,6 +4,8 @@ Quét tất cả COM ports, mở ở baudrate 115200, gửi "AT" và nếu nhậ
 
 import time
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from serial import Serial, SerialException
 from serial.tools import list_ports
 
@@ -363,6 +365,49 @@ def main():
                 print(f"Loi khi lay thong tin {port}: {e}")
     else:
         print("\n[INFO] Khong tim thay port tra loi 'OK'. Kiem tra driver/permission/thiet bi.")
+
+def scan_gsm_ports_parallel(max_workers=10, log_callback=None):
+    """Quét tất cả cổng COM để tìm GSM modem với đa luồng"""
+    def log(message):
+        if log_callback:
+            log_callback(message)
+        else:
+            print(message)
+    
+    # Lấy danh sách tất cả cổng COM
+    ports = list_com_ports()
+    if not ports:
+        log("❌ Không tìm thấy cổng COM nào")
+        return []
+    
+    log(f"🔍 Quét {len(ports)} cổng COM với {max_workers} luồng...")
+    
+    gsm_ports = []
+    
+    # Sử dụng ThreadPoolExecutor để quét đa luồng
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit tất cả tasks
+        future_to_port = {executor.submit(probe_port_simple, port): port for port in ports}
+        
+        # Thu thập kết quả
+        for future in as_completed(future_to_port):
+            port = future_to_port[future]
+            try:
+                result = future.result()
+                if result.get("ok"):
+                    gsm_ports.append(port)
+                    log(f"✅ Tìm thấy GSM tại {port}")
+                else:
+                    log(f"❌ {port}: No response")
+            except Exception as e:
+                log(f"❌ {port}: Error - {e}")
+    
+    log(f"🎯 Tìm thấy {len(gsm_ports)} cổng GSM: {gsm_ports}")
+    
+    # Đợi một chút để đảm bảo tất cả serial connections đã đóng
+    time.sleep(0.5)
+    
+    return gsm_ports
 
 # File này chỉ chứa các hàm utility để quét cổng GSM
 # Không cần hàm main vì logic chính đã được chuyển vào GSMInstance và Controller

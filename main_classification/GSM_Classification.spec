@@ -46,6 +46,15 @@ hiddenimports = [
     'scipy.signal',
     'scipy.io',
     'scipy.io.wavfile',
+    # GSM detection và string detection
+    'detect_gsm_port',
+    'string_detection',
+    'gsm_instance',
+    'controller',
+    'export_excel',
+    # Concurrent processing
+    'concurrent.futures',
+    'concurrent.futures.thread',
 ]
 
 a = Analysis(
@@ -64,6 +73,9 @@ a = Analysis(
     noarchive=False,
 )
 
+# Fix Python DLL issue
+pyi_splash = None
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
@@ -77,7 +89,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,  # Tắt UPX để tránh DLL issues
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,  # Ẩn console window

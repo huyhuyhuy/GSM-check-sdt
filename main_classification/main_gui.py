@@ -145,13 +145,14 @@ class AudioClassificationGUI:
         tree_frame.rowconfigure(0, weight=1)
 
         # tạo 1 vùng chứa list các đối tượng là các cổng GSM quét được
-        # mỗi hàng sẽ chia thành 5 cột: stt, số cổng GSM, trạng thái sim, số điện thoại trên cổng đó, số tiền còn lại của sim đó
-        self.gsm_list = ttk.Treeview(tree_frame, columns=("stt", "COM", "sim status", "phone number", "remaining balance"), show="headings")
+        # mỗi hàng sẽ chia thành 6 cột: stt, số cổng GSM, trạng thái sim, nhà mạng, số điện thoại trên cổng đó, số tiền còn lại của sim đó
+        self.gsm_list = ttk.Treeview(tree_frame, columns=("stt", "COM", "sim status", "network operator", "phone number", "remaining balance"), show="headings")
         
         # Thiết lập header với style đẹp hơn
         self.gsm_list.heading("stt", text="STT", anchor="center")
         self.gsm_list.heading("COM", text="Cổng GSM", anchor="center")
         self.gsm_list.heading("sim status", text="Tín Hiệu Sóng", anchor="center")
+        self.gsm_list.heading("network operator", text="Nhà Mạng", anchor="center")
         self.gsm_list.heading("phone number", text="Số Điện Thoại", anchor="center")
         self.gsm_list.heading("remaining balance", text="Số Dư Còn Lại", anchor="center")
         
@@ -159,6 +160,7 @@ class AudioClassificationGUI:
         self.gsm_list.column("stt", width=60, minwidth=60, anchor="center")
         self.gsm_list.column("COM", width=100, minwidth=100, anchor="center")
         self.gsm_list.column("sim status", width=120, minwidth=120, anchor="center")
+        self.gsm_list.column("network operator", width=120, minwidth=120, anchor="center")
         self.gsm_list.column("phone number", width=150, minwidth=150, anchor="center")
         self.gsm_list.column("remaining balance", width=140, minwidth=140, anchor="center")
         
@@ -235,9 +237,9 @@ class AudioClassificationGUI:
         for item in self.gsm_list.get_children():
             self.gsm_list.delete(item)
         
-        # Thêm thông báo
+        # Thêm thông báo với đủ 6 cột
         self.gsm_list.insert("", "end", values=(
-            "1", "Không tìm thấy", "N/A", "N/A", "N/A"
+            "1", "Không tìm thấy", "N/A", "N/A", "N/A", "N/A"
         ))
     
     def select_file(self):

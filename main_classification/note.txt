@@ -47,6 +47,8 @@ AT+CSQ kiểm tra sóng
 AT+QAUDRD=1,"{REMOTE_FILENAME}",{FORMAT},1  # Format 13 -> lệnh ghi âm
 AT+QAUDRD=0,"{REMOTE_FILENAME}",{FORMAT},1  # Format 13 -> lệnh dừng ghi âm
 
+AT+CUSD=1,"*102#",15
+
 gửi lệnh:  AT+CLCC
 Phản hồi chứa +COLP -> người nghe nhấc máy
 
