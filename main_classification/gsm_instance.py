@@ -12,59 +12,68 @@ import re
 import subprocess
 from typing import Dict, List, Optional, Callable
 from pathlib import Path
-import time
+from datetime import datetime
 
 # Import cho STT và phân loại
 import torch
 import librosa
 import soundfile as sf
 from pydub import AudioSegment
-from transformers import Wav2Vec2ForCTC, Wav2Vec2Processor
 
 from string_detection import keyword_in_text, labels
+from model_manager import model_manager
+
+# Cấu hình logging - ghi ra file
+log_dir = "logs"
+os.makedirs(log_dir, exist_ok=True)
 
 class GSMInstance:
     """Quản lý một thực thể GSM với đầy đủ chức năng"""
-    
+
     def __init__(self, port: str, log_callback: Optional[Callable] = None):
         self.port = port
         self.log_callback = log_callback
         self.serial_connection = None
         self.is_connected = False
-        
+
         # Thông tin cơ bản
         self.signal_strength = "Không xác định"
         self.network_operator = "Không xác định"
         self.phone_number = "Không xác định"
         self.balance = "Không xác định"
-        
+
         # Quản lý baudrate
         self.default_baudrate = 115200
         self.working_baudrate = 921600
         self.current_baudrate = self.default_baudrate
-        
+
         # Quản lý cuộc gọi
         self.phone_queue = []
         self.call_count = 0
         self.max_calls_before_reset = 100
         self.status = "idle"  # idle, calling, resetting, error
         self.results = []
-        
+
         # Threading
         self.processing_thread = None
         self.stop_flag = False
-        
-        # STT Model (lazy loading)
-        self._stt_processor = None
-        self._stt_model = None
-        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        # Logging riêng cho instance này
+        self.logger = logging.getLogger(f"GSMInstance_{port}")
+        log_file = os.path.join(log_dir, f"gsm_{port}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+        handler = logging.FileHandler(log_file, encoding='utf-8')
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        self.logger.addHandler(handler)
+        self.logger.setLevel(logging.INFO)
         
     def log(self, message: str):
         """Gửi log message"""
+        # Log vào file
+        self.logger.info(message)
+
+        # Gửi lên GUI nếu có callback
         if self.log_callback:
             self.log_callback(f"[{self.port}] {message}")
-        else:
-            logging.info(f"[{self.port}] {message}")
     
     def connect(self, baudrate: int = None) -> bool:
         """Kết nối với baudrate cụ thể"""
@@ -334,7 +343,32 @@ class GSMInstance:
                     "result": "lỗi",
                     "reason": "Không thể tải file ghi âm"
                 }
-            
+
+            # Kiểm tra file AMR có hợp lệ không (file size > 0)
+            if not os.path.exists(local_amr):
+                self.log(f"❌ File {local_amr} không tồn tại")
+                return {
+                    "phone_number": phone_number,
+                    "result": "lỗi",
+                    "reason": "File ghi âm không tồn tại"
+                }
+
+            file_size = os.path.getsize(local_amr)
+            if file_size == 0:
+                self.log(f"❌ File {local_amr} có kích thước 0 bytes")
+                # Xóa file lỗi
+                try:
+                    os.remove(local_amr)
+                except:
+                    pass
+                return {
+                    "phone_number": phone_number,
+                    "result": "lỗi",
+                    "reason": "File ghi âm rỗng (0 bytes)"
+                }
+
+            self.log(f"✅ File AMR hợp lệ: {file_size} bytes")
+
             # Convert AMR sang WAV
             if not self._convert_to_wav(local_amr, local_wav):
                 self.log(f"❌ Không thể convert file âm thanh")
@@ -540,17 +574,11 @@ class GSMInstance:
             self.disconnect()
     
     def _load_stt_model(self):
-        """Lazy load STT model"""
-        if self._stt_processor is None or self._stt_model is None:
-            try:
-                self.log("🤖 Đang tải model Wav2Vec2...")
-                model_id = "nguyenvulebinh/wav2vec2-base-vietnamese-250h"
-                self._stt_processor = Wav2Vec2Processor.from_pretrained(model_id)
-                self._stt_model = Wav2Vec2ForCTC.from_pretrained(model_id).to(self._device)
-                self.log("✅ Đã tải model STT thành công")
-            except Exception as e:
-                self.log(f"❌ Lỗi tải model STT: {e}")
-                raise
+        """
+        Lazy load STT model từ ModelManager (shared model)
+        KHÔNG CẦN NỮA - đã được thay thế bởi model_manager
+        """
+        pass
     
     def _try_parse_qfopen(self, resp):
         """Parse file descriptor từ QFOPEN response"""
@@ -663,28 +691,33 @@ class GSMInstance:
             return False
     
     def _transcribe_audio(self, wav_file):
-        """Speech-to-text sử dụng Wav2Vec2"""
+        """Speech-to-text sử dụng Wav2Vec2 từ ModelPool (pool of models)"""
         try:
             self.log("🎤 Đang thực hiện speech-to-text...")
-            
-            # Load model nếu chưa có
-            self._load_stt_model()
-            
-            # Load audio
-            speech, rate = librosa.load(wav_file, sr=16000)
-            input_values = self._stt_processor(speech, return_tensors="pt", sampling_rate=16000).input_values.to(self._device)
-            
-            # Transcribe
-            with torch.no_grad():
-                logits = self._stt_model(input_values).logits
-            
-            predicted_ids = torch.argmax(logits, dim=-1)
-            transcription = self._stt_processor.batch_decode(predicted_ids)
-            
-            result = transcription[0]
-            self.log(f"📝 STT result: {result}")
-            return result
-            
+
+            # Lấy model từ ModelPool (blocking nếu pool đầy)
+            processor, model, device = model_manager.get_model()
+
+            try:
+                # Load audio
+                speech, rate = librosa.load(wav_file, sr=16000)
+                input_values = processor(speech, return_tensors="pt", sampling_rate=16000).input_values.to(device)
+
+                # Transcribe
+                with torch.no_grad():
+                    logits = model(input_values).logits
+
+                predicted_ids = torch.argmax(logits, dim=-1)
+                transcription = processor.batch_decode(predicted_ids)
+
+                result = transcription[0]
+                self.log(f"📝 STT result: {result}")
+                return result
+
+            finally:
+                # QUAN TRỌNG: Trả model về pool sau khi dùng xong
+                model_manager.release_model(model)
+
         except Exception as e:
             self.log(f"❌ Lỗi STT: {e}")
             return ""

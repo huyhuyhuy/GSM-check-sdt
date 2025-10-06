@@ -4,7 +4,21 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils.dataframe import dataframe_to_rows
 from datetime import datetime
 import logging
+import os
 
+# Cấu hình logging
+log_dir = "logs"
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, f"export_excel_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
 
 def export_results_to_excel(results: dict, output_path: str) -> bool:
@@ -138,49 +152,47 @@ def _create_summary_sheet(sheet, results: dict, colors: dict):
 
 def _create_detail_sheet(sheet, category: str, data_list: list, color: str):
     """Tạo sheet chi tiết cho một loại"""
-    
+
     # Tiêu đề
     sheet['A1'] = f"CHI TIẾT - {category.replace('_', ' ').upper()}"
     sheet['A1'].font = Font(size=14, bold=True, color="FFFFFF")
     sheet['A1'].fill = PatternFill(start_color=color, end_color=color, fill_type="solid")
     sheet['A1'].alignment = Alignment(horizontal='center')
-    sheet.merge_cells('A1:H1')
-    
+    sheet.merge_cells('A1:F1')
+
     # Header bảng
-    headers = ["STT", "Cổng GSM", "Số Điện Thoại", "Thời Gian", "File Audio", "Nội Dung", "Lỗi", "Ghi Chú"]
-    
+    headers = ["STT", "Số Điện Thoại", "Kết Quả", "Lý Do", "Nội Dung STT", "Ghi Chú"]
+
     for col, header in enumerate(headers, 1):
         cell = sheet.cell(row=3, column=col, value=header)
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
         cell.alignment = Alignment(horizontal='center', vertical='center')
-    
+
     # Dữ liệu
     for i, data in enumerate(data_list, 1):
         row = i + 3
-        
+
         sheet[f'A{row}'] = i
-        sheet[f'B{row}'] = data.get('port', 'N/A')
-        sheet[f'C{row}'] = data.get('phone', 'N/A')
-        sheet[f'D{row}'] = data.get('timestamp', 'N/A')
-        sheet[f'E{row}'] = data.get('file', 'N/A')
-        sheet[f'F{row}'] = data.get('transcription', 'N/A')
-        sheet[f'G{row}'] = data.get('error', 'N/A')
-        
+        sheet[f'B{row}'] = data.get('phone_number', 'N/A')
+        sheet[f'C{row}'] = data.get('result', 'N/A')
+        sheet[f'D{row}'] = data.get('reason', 'N/A')
+        sheet[f'E{row}'] = data.get('transcribed_text', 'N/A')
+
         # Ghi chú đặc biệt
         note = ""
-        if data.get('status') == 'hoạt động':
+        if data.get('result') == 'hoạt động':
             note = "Người nghe đã nhấc máy"
-        elif data.get('error'):
+        elif data.get('result') == 'lỗi':
             note = "Có lỗi xảy ra"
-        elif not data.get('transcription'):
+        elif not data.get('transcribed_text'):
             note = "Không có nội dung audio"
-        
-        sheet[f'H{row}'] = note
-        
+
+        sheet[f'F{row}'] = note
+
         # Màu xen kẽ cho các hàng
         if i % 2 == 0:
-            for col in range(1, 9):
+            for col in range(1, 7):
                 sheet.cell(row=row, column=col).fill = PatternFill(
                     start_color="F2F2F2", end_color="F2F2F2", fill_type="solid"
                 )
@@ -188,22 +200,21 @@ def _create_detail_sheet(sheet, category: str, data_list: list, color: str):
     # Điều chỉnh độ rộng cột
     column_widths = {
         'A': 8,   # STT
-        'B': 12,  # Cổng GSM
-        'C': 15,  # Số điện thoại
-        'D': 20,  # Thời gian
-        'E': 25,  # File Audio
-        'F': 40,  # Nội dung
-        'G': 20,  # Lỗi
-        'H': 25   # Ghi chú
+        'B': 18,  # Số điện thoại
+        'C': 20,  # Kết quả
+        'D': 30,  # Lý do
+        'E': 50,  # Nội dung STT
+        'F': 25   # Ghi chú
     }
-    
+
     for col, width in column_widths.items():
         sheet.column_dimensions[col].width = width
-    
-    # Wrap text cho cột nội dung và ghi chú
+
+    # Wrap text cho cột lý do, nội dung và ghi chú
     for row in range(4, len(data_list) + 4):
+        sheet[f'D{row}'].alignment = Alignment(wrap_text=True, vertical='top')
+        sheet[f'E{row}'].alignment = Alignment(wrap_text=True, vertical='top')
         sheet[f'F{row}'].alignment = Alignment(wrap_text=True, vertical='top')
-        sheet[f'H{row}'].alignment = Alignment(wrap_text=True, vertical='top')
 
 def create_sample_results():
     """Tạo dữ liệu mẫu để test"""

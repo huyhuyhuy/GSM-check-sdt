@@ -5,9 +5,27 @@ Quét tất cả COM ports, mở ở baudrate 115200, gửi "AT" và nếu nhậ
 import time
 import json
 import threading
+import logging
+import os
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from serial import Serial, SerialException
 from serial.tools import list_ports
+
+# Cấu hình logging
+log_dir = "logs"
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, f"detect_gsm_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 CMD = "AT\r"
 OPEN_TIMEOUT = 1.0   # timeout khi mở cổng
@@ -369,10 +387,12 @@ def main():
 def scan_gsm_ports_parallel(max_workers=10, log_callback=None):
     """Quét tất cả cổng COM để tìm GSM modem với đa luồng"""
     def log(message):
+        # Log vào file
+        logger.info(message)
+
+        # Gửi lên GUI nếu có callback
         if log_callback:
             log_callback(message)
-        else:
-            print(message)
     
     # Lấy danh sách tất cả cổng COM
     ports = list_com_ports()

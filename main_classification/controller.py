@@ -17,8 +17,19 @@ from string_detection import keyword_in_text, labels
 from spk_to_text_wav2 import convert_to_wav, transcribe_wav2vec2
 from export_excel import export_results_to_excel
 
-# Cấu hình logging
-logging.basicConfig(level=logging.INFO)
+# Cấu hình logging - ghi ra file
+log_dir = "logs"
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, f"gsm_controller_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file, encoding='utf-8'),
+        logging.StreamHandler()  # Vẫn in ra console
+    ]
+)
 logger = logging.getLogger(__name__)
 
 class GSMController:
@@ -115,24 +126,23 @@ class GSMController:
             if not os.path.exists(file_path):
                 self.log(f"❌ File không tồn tại: {file_path}")
                 return False
-            
+
             with open(file_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
-            
+
             self.phone_list = []
             for line in lines:
                 phone = line.strip()
-                if phone and phone.startswith('0'):
-                    # Chuyển đổi từ 09xxxxxxxx thành +849xxxxxxxx
-                    if len(phone) == 10 and phone.startswith('09'):
-                        phone = '+84' + phone[1:]
-                    elif len(phone) == 11 and phone.startswith('09'):
-                        phone = '+84' + phone[1:]
+                # Validate số điện thoại: phải bắt đầu bằng 0 và có 10-11 chữ số
+                if phone and phone.startswith('0') and phone.isdigit() and len(phone) in [10, 11]:
+                    # Lấy nguyên số từ danh sách, không chuyển đổi
                     self.phone_list.append(phone)
-            
-            self.log(f"📋 Đã tải {len(self.phone_list)} số điện thoại từ file")
+                elif phone:
+                    self.log(f"⚠️ Bỏ qua số không hợp lệ: {phone}")
+
+            self.log(f"📋 Đã tải {len(self.phone_list)} số điện thoại hợp lệ từ file")
             return True
-            
+
         except Exception as e:
             self.log(f"❌ Lỗi khi tải file: {e}")
             return False
@@ -299,32 +309,21 @@ class GSMController:
         try:
             # Thu thập kết quả trước khi xuất
             self.collect_results()
-            
+
             if output_path is None:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 output_path = f"gsm_results_{timestamp}.xlsx"
-            
-            # Tạo dữ liệu xuất
-            export_data = []
-            for category, results in self.results.items():
-                for result in results:
-                    export_data.append({
-                        "Số điện thoại": result.get("phone_number", ""),
-                        "Kết quả": category,
-                        "Lý do": result.get("reason", ""),
-                        "Thời gian": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    })
-            
-            # Xuất ra Excel
-            success = export_results_to_excel(export_data, output_path)
-            
+
+            # Xuất ra Excel với định dạng dict đúng
+            success = export_results_to_excel(self.results, output_path)
+
             if success:
                 self.log(f"✅ Đã xuất kết quả ra file: {output_path}")
                 return True
             else:
                 self.log("❌ Không thể xuất kết quả")
                 return False
-            
+
         except Exception as e:
             self.log(f"❌ Lỗi khi xuất kết quả: {e}")
             return False
