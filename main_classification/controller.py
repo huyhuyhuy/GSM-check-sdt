@@ -10,6 +10,7 @@ from typing import List, Dict, Optional
 from pathlib import Path
 import os
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from gsm_instance import GSMInstance
 from detect_gsm_port import scan_gsm_ports_parallel
@@ -65,58 +66,88 @@ class GSMController:
         if self.log_callback:
             self.log_callback(message)
     
+    def _create_single_gsm_instance(self, port: str) -> Optional[Dict]:
+        """
+        Tạo một GSM instance cho một cổng (dùng cho đa luồng)
+
+        Returns:
+            Dict với thông tin GSM nếu thành công, None nếu thất bại
+        """
+        try:
+            self.log(f"📋 [{port}] Đang tạo GSM instance...")
+
+            # Tạo GSM instance
+            gsm_instance = GSMInstance(port, self.log)
+
+            # Kết nối và lấy thông tin cơ bản
+            if gsm_instance.connect():
+                gsm_info = gsm_instance.get_basic_info()
+                gsm_info["port"] = port
+                gsm_info["status"] = "Active"
+
+                # Reset baudrate lên 921600 ngay sau khi lấy thông tin cơ bản
+                self.log(f"🔄 [{port}] Đang reset baudrate lên 921600...")
+                if gsm_instance.reset_baudrate(921600):
+                    self.log(f"✅ [{port}] Reset baudrate thành công")
+                else:
+                    self.log(f"❌ [{port}] Reset baudrate thất bại")
+
+                self.log(f"✅ [{port}] GSM instance đã sẵn sàng")
+
+                return {
+                    "port": port,
+                    "instance": gsm_instance,
+                    "info": gsm_info
+                }
+            else:
+                self.log(f"❌ [{port}] Không thể kết nối GSM instance")
+                return None
+
+        except Exception as e:
+            self.log(f"❌ Lỗi khi tạo GSM instance {port}: {e}")
+            return None
+
     def scan_gsm_ports(self) -> List[Dict]:
-        """Quét và phát hiện các cổng GSM với đa luồng"""
+        """Quét và phát hiện các cổng GSM với đa luồng, khởi tạo song song"""
         self.log("🔍 Bắt đầu quét các cổng GSM...")
-        
+
         # Sử dụng đa luồng để quét cổng
         gsm_port_list = scan_gsm_ports_parallel(max_workers=10, log_callback=self.log)
-        
+
         # Lưu danh sách cổng để reset khi đóng
         self.gsm_ports_list = gsm_port_list.copy()
-        
+
+        if not gsm_port_list:
+            self.log("⚠️ Không tìm thấy cổng GSM nào")
+            return []
+
+        # Giới hạn số cổng theo max_ports
+        ports_to_init = gsm_port_list[:self.max_ports]
+
+        self.log(f"🚀 Đang khởi tạo {len(ports_to_init)} GSM instances SONG SONG...")
+
+        # Khởi tạo GSM instances SONG SONG với ThreadPoolExecutor
         gsm_ports = []
-        
-        # Tạo GSM instances cho từng cổng
-        for port in gsm_port_list:
-            try:
-                self.log(f"📋 [{port}] Đang tạo GSM instance...")
-                
-                # Tạo GSM instance
-                gsm_instance = GSMInstance(port, self.log)
-                
-                # Kết nối và lấy thông tin cơ bản
-                if gsm_instance.connect():
-                    gsm_info = gsm_instance.get_basic_info()
-                    gsm_info["port"] = port
-                    gsm_info["status"] = "Active"
-                    gsm_ports.append(gsm_info)
-                    
-                    # Reset baudrate lên 921600 ngay sau khi lấy thông tin cơ bản
-                    self.log(f"🔄 [{port}] Đang reset baudrate lên 921600...")
-                    if gsm_instance.reset_baudrate(921600):
-                        self.log(f"✅ [{port}] Reset baudrate thành công")
-                    else:
-                        self.log(f"❌ [{port}] Reset baudrate thất bại")
-                    
-                    # Lưu instance
-                    self.gsm_instances[port] = gsm_instance
-                    
-                    self.log(f"✅ [{port}] GSM instance đã sẵn sàng")
-                else:
-                    self.log(f"❌ [{port}] Không thể kết nối GSM instance")
-                
-                # Đợi một chút giữa các cổng để tránh xung đột
-                time.sleep(0.5)
-                
-                if len(gsm_ports) >= self.max_ports:
-                    break
-                    
-            except Exception as e:
-                self.log(f"❌ Lỗi khi tạo GSM instance {port}: {e}")
-                # Đợi một chút ngay cả khi có lỗi
-                time.sleep(0.5)
-        
+        with ThreadPoolExecutor(max_workers=min(len(ports_to_init), 10)) as executor:
+            # Submit tất cả tasks
+            future_to_port = {
+                executor.submit(self._create_single_gsm_instance, port): port
+                for port in ports_to_init
+            }
+
+            # Thu thập kết quả khi hoàn thành
+            for future in as_completed(future_to_port):
+                port = future_to_port[future]
+                try:
+                    result = future.result()
+                    if result:
+                        # Lưu instance
+                        self.gsm_instances[result["port"]] = result["instance"]
+                        # Lưu info
+                        gsm_ports.append(result["info"])
+                except Exception as e:
+                    self.log(f"❌ Exception khi khởi tạo {port}: {e}")
+
         self.log(f"🎯 Tạo thành công {len(gsm_ports)} GSM instances")
         return gsm_ports
     
@@ -353,30 +384,56 @@ class GSMController:
         
         self.log(f"🎯 Đã reset thành công {reset_count}/{len(self.gsm_instances)} instances")
     
+    def _final_reset_single_instance(self, port: str, instance) -> bool:
+        """
+        Reset cuối cùng một GSM instance (dùng cho đa luồng)
+
+        Returns:
+            True nếu thành công, False nếu thất bại
+        """
+        try:
+            self.log(f"🔄 [{port}] Đang reset cuối cùng...")
+
+            # Gửi lệnh AT+CFUN=1,1 và đóng kết nối
+            if instance.final_reset_and_close():
+                self.log(f"✅ [{port}] Reset cuối cùng thành công")
+                return True
+            else:
+                self.log(f"❌ [{port}] Reset cuối cùng thất bại")
+                return False
+
+        except Exception as e:
+            self.log(f"❌ [{port}] Lỗi khi reset cuối cùng: {e}")
+            return False
+
     def final_reset_all_instances(self):
-        """Reset cuối cùng tất cả GSM instances trước khi thoát"""
+        """Reset cuối cùng tất cả GSM instances trước khi thoát (song song)"""
         if not self.gsm_instances:
             self.log("⚠️ Không có GSM instances để reset cuối cùng")
             return
-        
-        self.log(f"🔄 Đang reset cuối cùng {len(self.gsm_instances)} GSM instances...")
-        
+
+        num_instances = len(self.gsm_instances)
+        self.log(f"🔄 Đang reset cuối cùng {num_instances} GSM instances SONG SONG...")
+
+        # Reset SONG SONG với ThreadPoolExecutor
         reset_count = 0
-        for port, instance in self.gsm_instances.items():
-            try:
-                self.log(f"🔄 [{port}] Đang reset cuối cùng...")
-                
-                # Gửi lệnh AT+CFUN=1,1 và đóng kết nối
-                if instance.final_reset_and_close():
-                    self.log(f"✅ [{port}] Reset cuối cùng thành công")
-                    reset_count += 1
-                else:
-                    self.log(f"❌ [{port}] Reset cuối cùng thất bại")
-                    
-            except Exception as e:
-                self.log(f"❌ [{port}] Lỗi khi reset cuối cùng: {e}")
-        
-        self.log(f"🎯 Đã reset cuối cùng thành công {reset_count}/{len(self.gsm_instances)} instances")
+        with ThreadPoolExecutor(max_workers=min(num_instances, 10)) as executor:
+            # Submit tất cả tasks
+            future_to_port = {
+                executor.submit(self._final_reset_single_instance, port, instance): port
+                for port, instance in self.gsm_instances.items()
+            }
+
+            # Thu thập kết quả
+            for future in as_completed(future_to_port):
+                port = future_to_port[future]
+                try:
+                    if future.result():
+                        reset_count += 1
+                except Exception as e:
+                    self.log(f"❌ Exception khi reset {port}: {e}")
+
+        self.log(f"🎯 Đã reset cuối cùng thành công {reset_count}/{num_instances} instances")
     
     def disconnect_all(self):
         """Ngắt kết nối tất cả GSM instances"""

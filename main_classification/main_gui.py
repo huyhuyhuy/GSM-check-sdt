@@ -185,39 +185,106 @@ class AudioClassificationGUI:
         self.controller = GSMController()
         self.controller.set_log_callback(self.add_log)
         self.phone_file_path = None
-        self.initialize_system()
+
+        # Hiện loading dialog và khởi tạo hệ thống trong background
+        self.show_loading_and_initialize()
     
-    def initialize_system(self):
-        """Khởi tạo hệ thống"""
+    def show_loading_and_initialize(self):
+        """Hiện loading dialog và khởi tạo hệ thống trong background"""
+        # Tạo loading dialog
+        loading_dialog = tk.Toplevel(self.root)
+        loading_dialog.title("Đang khởi tạo...")
+        loading_dialog.geometry("400x150")
+        loading_dialog.resizable(False, False)
+
+        # Center dialog
+        loading_dialog.transient(self.root)
+        loading_dialog.grab_set()
+
+        # Frame chứa nội dung
+        frame = ttk.Frame(loading_dialog, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        # Label thông báo
+        label = ttk.Label(frame,
+                         text="🔍 Đang quét và khởi tạo các cổng GSM...\nVui lòng đợi...",
+                         font=('Arial', 11),
+                         justify=tk.CENTER)
+        label.pack(pady=10)
+
+        # Progress bar
+        progress = ttk.Progressbar(frame, mode='indeterminate', length=300)
+        progress.pack(pady=10)
+        progress.start(10)
+
+        # Status label
+        status_label = ttk.Label(frame,
+                                text="Đang quét cổng COM...",
+                                font=('Arial', 9),
+                                foreground='#666')
+        status_label.pack(pady=5)
+
+        def update_status(message):
+            """Cập nhật status label"""
+            status_label.config(text=message)
+
         def init_thread():
-            self.add_log("Đang khởi tạo hệ thống...")
-            
-            # Quét các cổng GSM
-            self.add_log("🔍 Quét các cổng GSM...")
-            gsm_ports = self.controller.scan_gsm_ports()
-            
-            if gsm_ports:
-                # Hiển thị kết quả quét
-                self.display_gsm_ports(gsm_ports)
-                self.add_log(f"✅ Tìm thấy {len(gsm_ports)} cổng GSM")
-                
-                # GSM instances đã được tạo trong scan_gsm_ports
-                self.add_log("✅ GSM instances đã sẵn sàng!")
-            else:
-                self.add_log("⚠️ Không tìm thấy cổng GSM nào")
-                # Hiển thị thông báo
-                self.display_no_gsm_found()
-        
+            """Thread khởi tạo hệ thống"""
+            try:
+                # Quét các cổng GSM
+                self.root.after(0, lambda: update_status("🔍 Đang quét cổng COM..."))
+                self.add_log("🔍 Quét các cổng GSM...")
+                gsm_ports = self.controller.scan_gsm_ports()
+
+                if gsm_ports:
+                    # Hiển thị kết quả quét
+                    self.root.after(0, lambda: update_status(f"✅ Tìm thấy {len(gsm_ports)} cổng GSM"))
+                    self.display_gsm_ports(gsm_ports)
+                    self.add_log(f"✅ Tìm thấy {len(gsm_ports)} cổng GSM")
+
+                    # GSM instances đã được tạo trong scan_gsm_ports
+                    self.add_log("✅ GSM instances đã sẵn sàng!")
+                else:
+                    self.add_log("⚠️ Không tìm thấy cổng GSM nào")
+                    # Hiển thị thông báo
+                    self.display_no_gsm_found()
+
+            except Exception as e:
+                self.add_log(f"❌ Lỗi khởi tạo: {e}")
+                import traceback
+                self.add_log(traceback.format_exc())
+
+            finally:
+                # Đóng loading dialog
+                self.root.after(100, loading_dialog.destroy)
+
+        # Bắt đầu thread khởi tạo
         threading.Thread(target=init_thread, daemon=True).start()
+
+    def initialize_system(self):
+        """Khởi tạo hệ thống (deprecated - dùng show_loading_and_initialize thay thế)"""
+        self.show_loading_and_initialize()
     
     def display_gsm_ports(self, gsm_ports):
-        """Hiển thị danh sách cổng GSM trong Treeview"""
+        """Hiển thị danh sách cổng GSM trong Treeview (sắp xếp theo cổng COM tăng dần)"""
         # Xóa dữ liệu cũ
         for item in self.gsm_list.get_children():
             self.gsm_list.delete(item)
-        
-        # Thêm dữ liệu mới
-        for i, gsm_info in enumerate(gsm_ports, 1):
+
+        # Sắp xếp theo cổng COM tăng dần (COM3, COM36, COM37, COM39, ...)
+        def extract_com_number(gsm_info):
+            """Trích xuất số từ cổng COM để sắp xếp"""
+            port = gsm_info["port"]
+            try:
+                # Lấy số từ "COM37" -> 37
+                return int(port.replace("COM", ""))
+            except:
+                return 999  # Nếu không parse được, đẩy xuống cuối
+
+        sorted_gsm_ports = sorted(gsm_ports, key=extract_com_number)
+
+        # Thêm dữ liệu mới (đã sắp xếp)
+        for i, gsm_info in enumerate(sorted_gsm_ports, 1):
             data = (
                 str(i),
                 gsm_info["port"],
@@ -226,7 +293,7 @@ class AudioClassificationGUI:
                 gsm_info["phone_number"],
                 gsm_info["balance"]
             )
-            
+
             # Xác định tag dựa trên số thứ tự (0-based)
             tag = "even" if i % 2 == 0 else "odd"
             self.gsm_list.insert("", "end", values=data, tags=(tag,))
@@ -321,24 +388,89 @@ class AudioClassificationGUI:
         self.log_text.see(tk.END)
     
     def on_closing(self):
-        """Xử lý khi đóng ứng dụng"""
-        try:
-            # Dừng xử lý nếu đang chạy
-            if self.controller.is_running:
-                self.add_log("🛑 Đang dừng xử lý...")
-                self.controller.stop_processing()
-            
-            # Reset cuối cùng tất cả GSM instances (AT+CFUN=1,1)
-            self.add_log("🔄 Đang reset cuối cùng tất cả GSM instances...")
-            self.controller.final_reset_all_instances()
-            
-            self.add_log("✅ Đóng chương trình thành công!")
-            
-        except Exception as e:
-            self.add_log(f"❌ Lỗi khi đóng chương trình: {e}")
-        finally:
-            # Luôn đóng cửa sổ
-            self.root.destroy()
+        """Xử lý khi đóng ứng dụng với shutdown dialog"""
+        # Hỏi xác nhận trước khi thoát
+        if messagebox.askyesno("Xác nhận thoát",
+                               "Bạn có chắc chắn muốn thoát?\n\n"
+                               "Hệ thống sẽ dừng xử lý và reset tất cả GSM instances."):
+            self.show_shutdown_dialog()
+
+    def show_shutdown_dialog(self):
+        """Hiện shutdown dialog và thực hiện cleanup"""
+        # Tạo shutdown dialog
+        shutdown_dialog = tk.Toplevel(self.root)
+        shutdown_dialog.title("Đang thoát...")
+        shutdown_dialog.geometry("400x150")
+        shutdown_dialog.resizable(False, False)
+
+        # Center dialog
+        shutdown_dialog.transient(self.root)
+        shutdown_dialog.grab_set()
+
+        # Frame chứa nội dung
+        frame = ttk.Frame(shutdown_dialog, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        # Label thông báo
+        label = ttk.Label(frame,
+                         text="🔄 Đang dừng và reset các GSM instances...\nVui lòng đợi...",
+                         font=('Arial', 11),
+                         justify=tk.CENTER)
+        label.pack(pady=10)
+
+        # Progress bar
+        progress = ttk.Progressbar(frame, mode='indeterminate', length=300)
+        progress.pack(pady=10)
+        progress.start(10)
+
+        # Status label
+        status_label = ttk.Label(frame,
+                                text="Đang dừng xử lý...",
+                                font=('Arial', 9),
+                                foreground='#666')
+        status_label.pack(pady=5)
+
+        def update_status(message):
+            """Cập nhật status label"""
+            try:
+                status_label.config(text=message)
+            except:
+                pass  # Dialog có thể đã bị đóng
+
+        def shutdown_thread():
+            """Thread thực hiện shutdown"""
+            try:
+                # Bước 1: Dừng xử lý nếu đang chạy
+                if self.controller.is_running:
+                    self.root.after(0, lambda: update_status("🛑 Đang dừng xử lý..."))
+                    self.add_log("🛑 Đang dừng xử lý...")
+                    self.controller.stop_processing()
+                    self.add_log("✅ Đã dừng xử lý")
+
+                # Bước 2: Reset cuối cùng tất cả GSM instances (song song)
+                num_instances = len(self.controller.gsm_instances)
+                if num_instances > 0:
+                    self.root.after(0, lambda: update_status(f"🔄 Đang reset {num_instances} GSM instances..."))
+                    self.add_log(f"🔄 Đang reset cuối cùng {num_instances} GSM instances...")
+                    self.controller.final_reset_all_instances()
+                    self.add_log("✅ Đã reset tất cả GSM instances")
+
+                # Bước 3: Hoàn thành
+                self.root.after(0, lambda: update_status("✅ Hoàn thành!"))
+                self.add_log("✅ Đóng chương trình thành công!")
+
+            except Exception as e:
+                self.add_log(f"❌ Lỗi khi đóng chương trình: {e}")
+                import traceback
+                self.add_log(traceback.format_exc())
+
+            finally:
+                # Đóng shutdown dialog và main window
+                self.root.after(500, shutdown_dialog.destroy)
+                self.root.after(600, self.root.destroy)
+
+        # Bắt đầu thread shutdown
+        threading.Thread(target=shutdown_thread, daemon=True).start()
 
 def main():
     root = tk.Tk()
